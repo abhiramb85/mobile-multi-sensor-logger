@@ -26,9 +26,9 @@ class GPSConfig:
 class IMUConfig:
     """IMU sensor configuration."""
     enabled: bool = False
-    sensor_type: str = "MPU6050"
+    sensor_type: str = "BNO055"
     i2c_bus: int = 1
-    i2c_address: int = 0x68
+    i2c_address: int = 0x28
     sample_rate_hz: int = 100
 
 

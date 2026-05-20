@@ -43,9 +43,9 @@ class TestIMUConfig(unittest.TestCase):
         """Test default values."""
         config = IMUConfig()
         self.assertFalse(config.enabled)
-        self.assertEqual(config.sensor_type, "MPU6050")
+        self.assertEqual(config.sensor_type, "BNO055")
         self.assertEqual(config.i2c_bus, 1)
-        self.assertEqual(config.i2c_address, 0x68)
+        self.assertEqual(config.i2c_address, 0x28)
     
     def test_enabled(self):
         """Test enabling IMU."""

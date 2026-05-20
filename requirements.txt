@@ -5,3 +5,7 @@ numpy>=1.19.0
 pandas>=1.1.0
 folium>=0.12.0
 matplotlib>=3.3.0
+
+# IMU (BNO055 over I2C; Raspberry Pi only)
+adafruit-circuitpython-bno055>=5.4.0
+adafruit-blinka>=8.0.0

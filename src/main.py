@@ -42,8 +42,13 @@ class DataAcquisitionSystem:
         self.is_running = False
         self.acquisition_start = None
     
-    def initialize(self, mock_camera: bool = True, mock_gps: bool = True) -> bool:
-        """Initialize sensor drivers. IMU is still mock; camera and GPS are configurable."""
+    def initialize(
+        self,
+        mock_camera: bool = True,
+        mock_gps: bool = True,
+        mock_imu: bool = True,
+    ) -> bool:
+        """Initialize sensor drivers. Each sensor's mock/real mode is independent."""
         try:
             self.camera = CameraDriver(
                 device_id=self.config.camera.device_id,
@@ -69,14 +74,22 @@ class DataAcquisitionSystem:
                 self.gps = None
 
             if self.config.imu.enabled:
-                self.imu = IMUDriver()
+                self.imu = IMUDriver(
+                    i2c_address=self.config.imu.i2c_address,
+                    sample_rate_hz=self.config.imu.sample_rate_hz,
+                    use_mock=mock_imu,
+                )
                 if not self.imu.start():
-                    print("Failed to start mock IMU (continuing without IMU)")
+                    print(f"Failed to start IMU ({'mock' if mock_imu else 'real'}) (continuing without IMU)")
                     self.imu = None
 
             cam_mode = "MOCK" if mock_camera else "REAL"
             gps_mode = "MOCK" if mock_gps else "REAL"
-            print(f"System initialized successfully ({cam_mode} camera, {gps_mode} GPS, mock IMU).")
+            imu_mode = (
+                "disabled" if not self.config.imu.enabled
+                else ("MOCK" if mock_imu else "REAL")
+            )
+            print(f"System initialized successfully ({cam_mode} camera, {gps_mode} GPS, {imu_mode} IMU).")
             return True
         except Exception as e:
             print(f"Error during system initialization: {e}")
@@ -87,7 +100,7 @@ class DataAcquisitionSystem:
 
     def initialize_mock(self) -> bool:
         """Backwards-compatible entry point — all sensors mocked."""
-        return self.initialize(mock_camera=True, mock_gps=True)
+        return self.initialize(mock_camera=True, mock_gps=True, mock_imu=True)
     
     def start(self):
         """Start data acquisition loop."""
@@ -231,6 +244,11 @@ def main():
         action="store_true",
         help="Read from a real NMEA GPS over serial via pyserial (default: mock data)"
     )
+    parser.add_argument(
+        "--real-imu",
+        action="store_true",
+        help="Read from a real BNO055 over I2C via Adafruit Blinka (default: mock data; requires --enable-imu)"
+    )
     
     args = parser.parse_args()
     
@@ -253,7 +271,11 @@ def main():
     
     signal.signal(signal.SIGINT, signal_handler)
     
-    if system.initialize(mock_camera=not args.real_camera, mock_gps=not args.real_gps):
+    if system.initialize(
+        mock_camera=not args.real_camera,
+        mock_gps=not args.real_gps,
+        mock_imu=not args.real_imu,
+    ):
         system.start()
     else:
         print("Failed to initialize system")
