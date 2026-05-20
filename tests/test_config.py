@@ -31,7 +31,7 @@ class TestGPSConfig(unittest.TestCase):
     def test_defaults(self):
         """Test default values."""
         config = GPSConfig()
-        self.assertEqual(config.port, "/dev/ttyUSB0")
+        self.assertEqual(config.port, "/dev/ttyACM0")
         self.assertEqual(config.baudrate, 9600)
         self.assertEqual(config.type, "NMEA")
 

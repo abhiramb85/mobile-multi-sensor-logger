@@ -17,7 +17,7 @@ class CameraConfig:
 @dataclass
 class GPSConfig:
     """GPS module configuration."""
-    port: str = "/dev/ttyUSB0"
+    port: str = "/dev/ttyACM0"
     baudrate: int = 9600
     type: str = "NMEA"
 

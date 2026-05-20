@@ -42,8 +42,8 @@ class DataAcquisitionSystem:
         self.is_running = False
         self.acquisition_start = None
     
-    def initialize(self, mock_camera: bool = True) -> bool:
-        """Initialize sensor drivers. GPS/IMU are still mock; camera is configurable."""
+    def initialize(self, mock_camera: bool = True, mock_gps: bool = True) -> bool:
+        """Initialize sensor drivers. IMU is still mock; camera and GPS are configurable."""
         try:
             self.camera = CameraDriver(
                 device_id=self.config.camera.device_id,
@@ -59,9 +59,13 @@ class DataAcquisitionSystem:
                 print(f"Failed to start camera ({'mock' if mock_camera else 'real'})")
                 return False
 
-            self.gps = GPSDriver()
+            self.gps = GPSDriver(
+                port=self.config.gps.port,
+                baudrate=self.config.gps.baudrate,
+                use_mock=mock_gps,
+            )
             if not self.gps.start():
-                print("Failed to start mock GPS (continuing without GPS)")
+                print(f"Failed to start GPS ({'mock' if mock_gps else 'real'}) (continuing without GPS)")
                 self.gps = None
 
             if self.config.imu.enabled:
@@ -70,8 +74,9 @@ class DataAcquisitionSystem:
                     print("Failed to start mock IMU (continuing without IMU)")
                     self.imu = None
 
-            mode = "MOCK" if mock_camera else "REAL"
-            print(f"System initialized successfully ({mode} camera, mock GPS/IMU).")
+            cam_mode = "MOCK" if mock_camera else "REAL"
+            gps_mode = "MOCK" if mock_gps else "REAL"
+            print(f"System initialized successfully ({cam_mode} camera, {gps_mode} GPS, mock IMU).")
             return True
         except Exception as e:
             print(f"Error during system initialization: {e}")
@@ -82,7 +87,7 @@ class DataAcquisitionSystem:
 
     def initialize_mock(self) -> bool:
         """Backwards-compatible entry point — all sensors mocked."""
-        return self.initialize(mock_camera=True)
+        return self.initialize(mock_camera=True, mock_gps=True)
     
     def start(self):
         """Start data acquisition loop."""
@@ -221,6 +226,11 @@ def main():
         action="store_true",
         help="Capture from a real USB camera via OpenCV (default: mock frames)"
     )
+    parser.add_argument(
+        "--real-gps",
+        action="store_true",
+        help="Read from a real NMEA GPS over serial via pyserial (default: mock data)"
+    )
     
     args = parser.parse_args()
     
@@ -243,7 +253,7 @@ def main():
     
     signal.signal(signal.SIGINT, signal_handler)
     
-    if system.initialize(mock_camera=not args.real_camera):
+    if system.initialize(mock_camera=not args.real_camera, mock_gps=not args.real_gps):
         system.start()
     else:
         print("Failed to initialize system")
