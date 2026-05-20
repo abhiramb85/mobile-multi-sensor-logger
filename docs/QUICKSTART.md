@@ -24,13 +24,17 @@ lsusb
 # Find camera
 ls /dev/video*
 
-# Test GPS (if connected)
-cat /dev/ttyUSB0 115200
+# Test GPS (if connected) — Navilock NL-852EUSB enumerates as ttyACM0
+cat /dev/ttyACM0
+# For USB-to-serial bridges instead: cat /dev/ttyUSB0
+
+# Test IMU (if connected) — BNO055 should appear at address 28
+i2cdetect -y 1
 ```
 
-### 3. First Recording (5 minutes)
+### 3. First Recording — mock mode (5 minutes, no hardware needed)
 ```bash
-python src/main.py \
+python -m src.main \
   --output-dir ./data/test_run \
   --duration 300 \
   --camera-id 0 \
@@ -39,9 +43,18 @@ python src/main.py \
 # Output goes to ./data/test_run/
 ```
 
+### 3b. First Recording — real hardware
+```bash
+python -m src.main \
+  --real-camera --real-gps \
+  --enable-imu --real-imu \
+  --output-dir ./data/real_test \
+  --duration 60
+```
+
 ### 4. Replay Dataset
 ```bash
-python src/tools/replay.py \
+python -m src.tools.replay \
   --dataset-dir ./data/test_run \
   --speed 1.0 \
   --map \
@@ -65,43 +78,52 @@ python src/tools/replay.py \
 
 ### Recording Options
 
+Always invoke as a module (`python -m src.main`) — running `python src/main.py` directly will fail because the project uses absolute `from src.sensors...` imports.
+
 ```bash
-# Basic recording
-python src/main.py
+# Basic recording (mock mode, no hardware required)
+python -m src.main
 
 # Specify camera and GPS port
-python src/main.py --camera-id 0 --gps-port /dev/ttyUSB0
+python -m src.main --real-camera --real-gps --camera-id 0 --gps-port /dev/ttyACM0
 
 # Limit duration (300 seconds = 5 minutes)
-python src/main.py --duration 300
+python -m src.main --duration 300
 
-# Enable IMU
-python src/main.py --enable-imu
+# Enable IMU (still mock unless --real-imu is also passed)
+python -m src.main --enable-imu
+
+# Enable real IMU
+python -m src.main --enable-imu --real-imu
 
 # Reduce framerate to save CPU/storage
-python src/main.py --fps 15
+python -m src.main --fps 15
 
-# Full example
-python src/main.py \
+# Full real-hardware example
+python -m src.main \
+  --real-camera --real-gps --enable-imu --real-imu \
   --output-dir ./data/bike_ride_001 \
   --duration 1800 \
   --camera-id 0 \
-  --gps-port /dev/ttyUSB0 \
-  --fps 30 \
-  --enable-imu
+  --gps-port /dev/ttyACM0 \
+  --fps 30
 ```
+
+### Mock vs Real Mode
+
+By default, every sensor runs as a mock — the pipeline produces a valid dataset using synthetic data, with no hardware connected. Pass the per-sensor `--real-*` flag to use real hardware for that sensor. You can mix freely (e.g. `--real-camera` only, while GPS and IMU stay mocked).
 
 ### Replay Options
 
 ```bash
 # Basic replay
-python src/tools/replay.py --dataset-dir ./data/test_run
+python -m src.tools.replay --dataset-dir ./data/test_run
 
 # Fast playback
-python src/tools/replay.py --dataset-dir ./data/test_run --speed 2.0
+python -m src.tools.replay --dataset-dir ./data/test_run --speed 2.0
 
 # Generate map and telemetry
-python src/tools/replay.py --dataset-dir ./data/test_run --map --telemetry
+python -m src.tools.replay --dataset-dir ./data/test_run --map --telemetry
 
 # Replay on different machine
 # Copy entire ./data/test_run directory and run replay
@@ -174,8 +196,9 @@ lsusb
 # Check camera
 v4l2-ctl --list-devices
 
-# Find GPS port
-dmesg | grep ttyUSB
+# Find GPS port (covers both USB-CDC and USB-to-serial bridges)
+dmesg | grep -E "ttyACM|ttyUSB"
+ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
 ```
 
 ## Troubleshooting Quick Links
@@ -194,5 +217,5 @@ For detailed help:
 
 **Ready to start? Run your first recording:**
 ```bash
-python src/main.py --output-dir ./data/test_run --duration 60
+python -m src.main --output-dir ./data/test_run --duration 60
 ```

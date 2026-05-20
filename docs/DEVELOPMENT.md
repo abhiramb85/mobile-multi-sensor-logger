@@ -6,12 +6,15 @@
 - [x] Define core data structures
 - [x] Create configuration schemas
 
-## Phase 2: Sensor Data Acquisition Modules (In Progress)
-- [x] Camera driver skeleton (`src/sensors/camera.py`)
-- [x] GPS driver skeleton (`src/sensors/gps.py`)
-- [x] IMU driver skeleton (`src/sensors/imu.py`)
-- [ ] Test each sensor individually (100+ samples each)
-- [ ] Handle sensor error conditions (disconnects, timeouts)
+## Phase 2: Sensor Data Acquisition Modules ✓
+- [x] Camera driver — OpenCV-based, real + mock (`src/sensors/camera.py`)
+- [x] GPS driver — pyserial NMEA-0183 parser (RMC + GGA, any talker ID), real + mock (`src/sensors/gps.py`)
+- [x] IMU driver — BNO055 over I2C via Adafruit Blinka, real + mock (`src/sensors/imu.py`)
+- [x] Mock fallback for every sensor so the pipeline runs end-to-end with no hardware
+- [x] Background sampler threads for GPS and IMU so the acquisition loop never blocks on a slow read
+- [x] NMEA checksum verification + status='V' / fix-quality=0 sentences ignored
+- [ ] Long-duration sensor reliability test (100+ samples each, error injection)
+- [ ] Handle sensor disconnects mid-run (USB hot-unplug, I2C bus hang)
 
 ## Phase 3: Synchronization & Logging Core
 - [x] Timestamp synchronizer sketch (`src/core/sync.py`)
@@ -66,10 +69,11 @@
 
 ## Known Issues & TODOs
 
-1. **IMU integration**: Currently placeholder implementation. Awaits hardware selection.
-2. **USB camera timestamps**: Drifts over time. RPi CSI camera recommended for better sync.
+1. **IMU integration**: BNO055 driver implemented. Driver exposes the full fusion outputs internally (quaternion, Euler, linear acceleration) but only `ax/ay/az/gx/gy/gz` are persisted to CSV, per the fixed schema. Extending the schema is a future task.
+2. **USB camera timestamps**: Drifts over time. RPi CSI camera recommended for better sync — would require a separate picamera2 code path on Pi 5.
 3. **GPS cold start**: 30+ seconds typical in open sky. Document in user guide.
-4. **Performance**: Raspberry Pi 4 may bottleneck at >20 fps full resolution. Test early.
+4. **Performance**: Raspberry Pi 4 may bottleneck at >20 fps full resolution. Test early on Pi 5 (USB 3.0 gives more headroom).
+5. **Real-hardware testing on Pi 5**: All real drivers exist but haven't been validated end-to-end on the user's actual hardware (12 MP USB camera, Navilock NL-852EUSB GPS, BNO055 IMU).
 
 ## Next Steps
 

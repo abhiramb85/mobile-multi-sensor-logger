@@ -8,7 +8,8 @@ This project integrates camera, GPS, and optional IMU sensors to collect geo-ref
 
 ## Features
 
-- **Multi-sensor acquisition**: Camera (USB), GPS (NMEA/gpsd), IMU (I2C/SPI)
+- **Multi-sensor acquisition**: USB camera via OpenCV, NMEA-0183 GPS via pyserial, BNO055 IMU via I2C (optional)
+- **Mock fallbacks**: Every sensor driver runs in mock mode by default; opt-in to real hardware with `--real-camera`, `--real-gps`, `--real-imu`
 - **Hardware time synchronization**: GPS as reference clock with nearest-neighbor interpolation
 - **Structured dataset output**: Images directory + CSV log + metadata JSON
 - **Replay tool**: Synchronized video playback with GPS map overlay and IMU telemetry
@@ -48,25 +49,39 @@ Refer to `docs/HARDWARE_SETUP.md` for detailed wiring and assembly instructions.
 
 ### Supported Components
 
-- **Camera**: Any USB camera supported by OpenCV (tested on Logitech C920, Raspberry Pi Camera v2)
-- **GPS**: u-blox NEO-6M or equivalent NMEA-compatible module
-- **IMU**: Optional MPU-6050 or LSM6DSL (I2C)
-- **Compute**: Raspberry Pi 4+ recommended; tested on Python 3.8+
+- **Camera**: Any USB UVC camera supported by OpenCV (tested on a 12 MP USB webcam at 1280×720)
+- **GPS**: Any NMEA-0183 module over USB or UART. Default port `/dev/ttyACM0` matches native-USB modules like the Navilock NL-852EUSB (u-blox 8). Pass `--gps-port /dev/ttyUSB0` for USB-to-serial bridges.
+- **IMU**: Optional Bosch BNO055 over I2C (9-DOF with onboard sensor fusion). Default address `0x28`.
+- **Compute**: Raspberry Pi 4 or 5; Python 3.8+
 
 ## Usage
 
 ### Data Acquisition
 
+Run as a module from the project root so the `src` package resolves:
+
 ```bash
-python src/main.py --output-dir ./data/run001 --duration 600 --camera-id 0
+python -m src.main --output-dir ./data/run001 --duration 600 --camera-id 0
+```
+
+By default everything runs in mock mode (synthetic data, no hardware needed). Add the `--real-*` flags per sensor to use real hardware:
+
+```bash
+python -m src.main \
+  --real-camera --real-gps --enable-imu --real-imu \
+  --output-dir ./data/run001 --duration 600
 ```
 
 Options:
 - `--output-dir`: Directory to store dataset
 - `--duration`: Recording duration in seconds (0 = infinite)
 - `--camera-id`: USB camera device ID (default: 0)
-- `--gps-port`: Serial port for GPS (e.g., `/dev/ttyUSB0`)
-- `--enable-imu`: Enable IMU acquisition
+- `--gps-port`: Serial port for GPS (default: `/dev/ttyACM0`)
+- `--enable-imu`: Include the IMU in this run (off by default — CSV columns are optional)
+- `--real-camera`: Capture from a real USB camera via OpenCV instead of mock frames
+- `--real-gps`: Read real NMEA sentences from the GPS port instead of mock data
+- `--real-imu`: Read from a real BNO055 over I2C instead of mock data (also needs `--enable-imu`)
+- `--fps`: Camera frames per second (default: 30)
 
 Output structure:
 ```
@@ -92,7 +107,7 @@ timestamp,latitude,longitude,image_path,ax,ay,az,gx,gy,gz
 ### Replay Tool
 
 ```bash
-python src/tools/replay.py --dataset-dir ./data/run001 --speed 1.0
+python -m src.tools.replay --dataset-dir ./data/run001 --speed 1.0
 ```
 
 Displays:
@@ -123,14 +138,12 @@ data/                 # Default data storage location
 
 ## Development Status
 
-**Phase**: Early development (Phases 1-2)
-
 - [x] Project structure
-- [ ] Sensor driver implementation
-- [ ] Timestamp synchronization
-- [ ] CSV logging
-- [ ] Replay tool
-- [ ] Real-world validation
+- [x] Sensor drivers (camera via OpenCV, GPS via pyserial NMEA, BNO055 IMU via Adafruit Blinka — all with mock fallbacks)
+- [x] Timestamp synchronization (GPS-referenced, nearest-neighbor)
+- [x] CSV logging + metadata.json
+- [x] Replay tool (video + folium map + matplotlib telemetry)
+- [ ] Real-world validation on bicycle/robot platform
 
 See `docs/DEVELOPMENT.md` for detailed roadmap.
 

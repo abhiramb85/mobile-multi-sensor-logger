@@ -92,17 +92,16 @@ dataset_root/
       "codec": "MJPEG"
     },
     "gps": {
-      "port": "/dev/ttyUSB0",
+      "port": "/dev/ttyACM0",
       "baudrate": 9600,
-      "type": "NMEA",
-      "enabled": true
+      "type": "NMEA"
     },
     "imu": {
       "enabled": false,
-      "sensor_type": null,
-      "i2c_bus": null,
-      "i2c_address": null,
-      "sample_rate_hz": null
+      "sensor_type": "BNO055",
+      "i2c_bus": 1,
+      "i2c_address": 40,
+      "sample_rate_hz": 100
     }
   },
   "synchronization": {

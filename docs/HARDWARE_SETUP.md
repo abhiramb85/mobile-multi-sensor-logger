@@ -3,37 +3,36 @@
 ## Supported Components
 
 ### Camera
-- **Logitech C920 HD**: USB, 1080p, stable, recommended for development
-- **Raspberry Pi Camera v2**: CSI, 8MP, requires RPi; better for timestamp sync
-- Other USB cameras supported by OpenCV
+- **Any USB UVC webcam**: works out-of-the-box via OpenCV (`cv2.VideoCapture`). Tested target: a 12 MP USB camera at 1280×720.
+- **Logitech C920 HD**: USB, 1080p, well-known reference.
+- **Raspberry Pi Camera Module (CSI ribbon)**: NOT supported by the current driver on Pi 5 — would need a separate picamera2/libcamera code path.
 
 ### GPS Module
-- **u-blox NEO-6M**: USB or serial UART, NMEA protocol, commonly available
-- **u-blox NEO-7M/8M**: Newer versions, higher accuracy (±2.5m)
-- Any NMEA-compatible GPS module
+- **Navilock NL-852EUSB** (u-blox 8 UBX-M8030-KT): native USB CDC, shows up as `/dev/ttyACM0`. Multi-GNSS (GPS+GLONASS+BeiDou+Galileo+QZSS), 2.5 m CEP, ~26 s cold start. This is the tested module.
+- **u-blox NEO-6M/7M/8M USB**: equivalent; same driver works.
+- **Any NMEA-0183 module** (USB or UART): the driver parses RMC + GGA from any talker ID (`$GP`, `$GN`, `$GL`, `$GA`, …) and verifies the `*XX` checksum.
 
 ### IMU (Optional)
-- **MPU-6050**: I2C, 6-DOF, cheap, common
-- **LSM6DSL**: I2C/SPI, 6-DOF, lower power
-- **ICM-20689**: SPI, high-performance alternative
+- **Bosch BNO055** (9-DOF with onboard sensor fusion): I2C, default address `0x28` (Adafruit breakouts), alt `0x29` if ADR pin tied high. Outputs accel/gyro/mag plus quaternion/Euler/calibration status from hardware fusion (NDOF mode). This is the tested module.
+- Other I2C IMUs (MPU-6050, ICM-20948, LSM6DSL) are not currently supported — would need a new driver in `src/sensors/imu.py`.
 
 ### Compute Platform
-- **Raspberry Pi 4B** (4GB+): Recommended, tested, plug-and-play USB support
-- **Raspberry Pi 3B+**: Slower, may struggle with 30+ fps capture
-- **Jetson Nano**: Overkill for logging, good if adding ML later
-- Any Linux system with USB support (Intel NUC, laptop, etc.)
+- **Raspberry Pi 5**: tested target; USB 3.0 gives plenty of headroom for camera + GPS over USB.
+- **Raspberry Pi 4B** (4GB+): also works; may bottleneck above ~20 fps at full resolution.
+- **Raspberry Pi 3B+**: slower, may struggle with 30+ fps capture.
+- Any Linux system with USB and I2C support.
 
-## Raspberry Pi 4 Assembly
+## Raspberry Pi Assembly
 
 ### Required
-- Raspberry Pi 4 (4GB or 8GB)
-- 64GB microSD card (class 10, fast)
-- USB power adapter (5V 3A minimum)
-- Logitech C920 USB camera
-- u-blox NEO-6M GPS module (USB version)
+- Raspberry Pi 4 (4GB+) or Raspberry Pi 5
+- Fast storage (64GB+ microSD class 10, or USB SSD on Pi 5 — strongly recommended for sustained 30 fps recording)
+- USB power adapter (5V 3A for Pi 4; 5V 5A USB-C for Pi 5)
+- USB UVC camera (12 MP USB camera, Logitech C920, etc.)
+- USB GPS module (Navilock NL-852EUSB recommended)
 
 ### Optional
-- MPU-6050 IMU breakout board
+- BNO055 IMU breakout board (Adafruit or equivalent)
 - Breadboard and jumper wires (for I2C)
 - USB hub (if > 3 USB devices)
 - Weatherproof enclosure
@@ -41,20 +40,22 @@
 ### Wiring
 
 #### USB Connections
-- Camera → USB port 1
-- GPS (if USB) → USB port 2
-- Power → Micro USB
+- Camera → USB port (prefer USB 3.0 / blue on Pi 4; either port on Pi 5)
+- GPS (Navilock NL-852EUSB) → any USB port → enumerates as `/dev/ttyACM0`
+- Power → USB-C (Pi 5) or USB-C/micro-USB (Pi 4)
 
-#### I2C Connections (for IMU)
-- MPU-6050 VCC → RPi 3.3V (pin 1)
-- MPU-6050 GND → RPi GND (pin 6)
-- MPU-6050 SDA → RPi GPIO 2 (pin 3)
-- MPU-6050 SCL → RPi GPIO 3 (pin 5)
+#### I2C Connections (for BNO055 IMU)
+- BNO055 VIN → RPi 3.3V (pin 1)  *(do NOT use 5V — the BNO055 chip itself is 3.3 V; Adafruit breakouts have a regulator but 3.3 V is safe everywhere)*
+- BNO055 GND → RPi GND (pin 6)
+- BNO055 SDA → RPi GPIO 2 (pin 3)
+- BNO055 SCL → RPi GPIO 3 (pin 5)
+- (Optional) BNO055 ADR → GND for `0x28` (default), or 3.3V for `0x29`
 
-#### Serial Connections (if using serial GPS)
+#### Serial Connections (only if using a UART GPS instead of USB)
 - GPS TX → RPi RX (GPIO 15, pin 10)
 - GPS RX → RPi TX (GPIO 14, pin 8)
 - GPS GND → RPi GND (pin 6)
+- Note: on Pi 5 the UART overlay is enabled via `/boot/firmware/config.txt` (not `/boot/config.txt`).
 
 ### Software Setup
 
@@ -80,45 +81,55 @@
 
 3. **Install Python Dependencies**
    ```bash
-   sudo apt install -y python3-pip python3-venv python3-dev
+   sudo apt install -y python3-pip python3-venv python3-dev libgl1 i2c-tools
    
    # Create virtual environment
-   python3 -m venv /path/to/mobile-multi-sensor-logger/venv
+   cd /path/to/mobile-multi-sensor-logger
+   python3 -m venv venv
    source venv/bin/activate
    
-   # Install project dependencies
+   # Install project dependencies (includes opencv-python, pyserial,
+   # adafruit-circuitpython-bno055, and adafruit-blinka)
    pip install -r requirements.txt
-   
-   # Optional: IMU libraries (if using IMU)
-   pip install adafruit-circuitpython-mpu6050
    ```
 
 ## Testing Sensors
 
 ### Test Camera
 ```bash
-python3 -c "import cv2; cap = cv2.VideoCapture(0); print(cap.get(cv2.CAP_PROP_FRAME_COUNT))"
+# Grab one frame and print its shape — proves the camera works end-to-end.
+python3 -c "import cv2; c=cv2.VideoCapture(0); ok,f=c.read(); print('ok=',ok,'shape=',None if f is None else f.shape); c.release()"
 ```
 
 ### Test GPS
 ```bash
-# If USB connection
-cat /dev/ttyUSB0 115200
-# Should show NMEA sentences starting with $G
-
-# If serial connection (RPi)
-minicom -D /dev/ttyAMA0 -b 9600
+# Native-USB GPS modules (Navilock NL-852EUSB, most u-blox 7/8 USB)
+cat /dev/ttyACM0
+# USB-to-serial bridge modules (FTDI, CP2102, PL2303)
+cat /dev/ttyUSB0
+# UART-connected GPS (Pi GPIO 14/15)
+cat /dev/serial0
+# Should show NMEA sentences. Multi-GNSS modules use $GN prefix:
+#   $GNRMC,hhmmss.ss,A,ddmm.mmmm,N,dddmm.mmmm,E,...
+# Status 'A' = active fix, 'V' = void (no fix yet). Outdoors, expect 'V' for the first ~30 s.
+# Press Ctrl+C to stop.
 ```
 
-### Test IMU (if enabled)
+### Test IMU (BNO055)
+```bash
+# First confirm the chip is on the bus
+i2cdetect -y 1
+# Expect "28" in the grid (or "29" if ADR is high). "UU" means a kernel driver
+# has claimed the address — fine, the userspace library still works.
+```
 ```python
-from adafruit_mpu6050 import Adafruit_MPU6050
-import board
-import busio
-
+import board, busio, adafruit_bno055
 i2c = busio.I2C(board.SCL, board.SDA)
-mpu = Adafruit_MPU6050(i2c)
-print(mpu.acceleration, mpu.gyro)
+sensor = adafruit_bno055.BNO055_I2C(i2c)  # add address=0x29 if you tied ADR high
+print("accel:", sensor.acceleration)        # m/s^2, includes gravity
+print("gyro:", sensor.gyro)                  # deg/s
+print("euler:", sensor.euler)                # heading, roll, pitch (deg)
+print("calibration:", sensor.calibration_status)  # (sys, gyro, accel, mag), each 0-3
 ```
 
 ## Outdoor Testing
@@ -132,8 +143,8 @@ print(mpu.acceleration, mpu.gyro)
 ### Pre-Test Checklist
 - [ ] All USB devices detected: `lsusb`
 - [ ] Camera accessible: `ls /dev/video*`
-- [ ] GPS getting fixes: `cat /dev/ttyUSB0` (watch for NMEA `$GPA` sentences with A = active)
-- [ ] IMU responding (if enabled): `i2cdetect -y 1` (should show 0x68)
+- [ ] GPS getting fixes: `cat /dev/ttyACM0` (watch for `$GNRMC`/`$GNGGA` sentences with status `A` = active)
+- [ ] IMU responding (if enabled): `i2cdetect -y 1` (should show `28`, or `29` if ADR high)
 - [ ] Storage space: `df -h` (ensure >50GB free)
 - [ ] Battery/power: Adequate for planned duration
 - [ ] Network connectivity: Not required for logging, but helpful for monitoring
@@ -146,25 +157,26 @@ print(mpu.acceleration, mpu.gyro)
 ls /dev/video*
 
 # Adjust --camera-id to match (usually 0 or 1)
-python src/main.py --camera-id 0
+python -m src.main --real-camera --camera-id 0
 ```
 
 ### GPS Not Getting Fix
 - Ensure antenna is outdoors and away from metal
-- Wait 30-60 seconds (cold start)
-- Check NMEA output: `cat /dev/ttyUSB0` should show $GPRMC or $GPGGA with status A (active)
-- Verify baud rate (usually 9600)
+- Wait 30-60 seconds (cold start; Navilock NL-852EUSB spec is ~26 s)
+- Check NMEA output: `cat /dev/ttyACM0` should show `$GNRMC` or `$GNGGA` with status `A` (active)
+- Wrong port? Try `cat /dev/ttyUSB0` or `cat /dev/serial0`
+- For USB CDC modules (like the Navilock) the baud rate setting is mostly cosmetic — USB is packet-based
 
 ### Low Frame Rate / Dropped Frames
-- Reduce resolution: `--fps 15` or adjust in src/core/config.py
+- Reduce resolution: `--fps 15` or adjust in `src/core/config.py`
 - Monitor CPU: `top` or `htop`
 - Consider USB hub if multiple devices compete for bandwidth
 
 ### I2C Device Not Found
 ```bash
 i2cdetect -y 1
-# Should show device address (0x68 for MPU-6050)
-# If not found: check wiring, run `sudo i2cdetect -r 1` to detect
+# Should show "28" for BNO055 (or "29" if ADR pin tied high)
+# If not found: check wiring, ensure VIN→3.3V not 5V, run `sudo i2cdetect -r 1` to retry
 ```
 
 ## Performance Tips

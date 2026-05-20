@@ -24,16 +24,20 @@
 
 **Solutions**:
 ```bash
-# Test GPS directly
-cat /dev/ttyUSB0 115200
+# Test GPS directly — try ttyACM0 first (native USB modules like Navilock NL-852EUSB)
+cat /dev/ttyACM0
+# For USB-to-serial bridges:
+cat /dev/ttyUSB0
+# For UART-connected GPS (Pi GPIO 14/15):
+cat /dev/serial0
 
 # Look for lines like:
-# $GPRMC,hhmmss.ss,A,ddmm.mmmm,N,dddmm.mmmm,E,...
-# Status 'A' = active fix, 'V' = void (no fix)
+# $GNRMC,hhmmss.ss,A,ddmm.mmmm,N,dddmm.mmmm,E,...   (multi-GNSS)
+# $GPRMC,hhmmss.ss,A,ddmm.mmmm,N,dddmm.mmmm,E,...   (GPS-only)
+# Status 'A' = active fix, 'V' = void (no fix). Outdoors, void for the first ~30 s is normal.
 
-# If no output, try:
-# 1. Different port: /dev/ttyACM0, /dev/ttyAMA0
-# 2. Different baud rate: 4800, 38400, 115200
+# Check which port the device enumerated as:
+dmesg | grep -E "ttyACM|ttyUSB"
 ```
 
 ### 3. Low Frame Rate / Frame Drops
@@ -70,17 +74,21 @@ dd if=/dev/zero of=testfile bs=1M count=100 oflag=dsync
 **Check I2C bus**:
 ```bash
 i2cdetect -y 1
-# Should show address (0x68 for MPU-6050, 0x6A/0x6B for LSM6DSL)
-# If shows UU: device in use by kernel driver
+# Expected addresses:
+#   0x28 = BNO055 (default, ADR pin low)
+#   0x29 = BNO055 (ADR pin high)
+#   0x68 = MPU-6050 (not supported by current driver)
+# If shows UU: device in use by kernel driver — fine, userspace library still works
 # If shows --: device not responding (check wiring)
 ```
 
-**Wiring checklist**:
-- VCC → 3.3V (not 5V!)
+**Wiring checklist (BNO055)**:
+- VIN → 3.3V (Adafruit breakouts have a regulator but stick to 3.3 V)
 - GND → GND
 - SDA → GPIO 2 (pin 3)
 - SCL → GPIO 3 (pin 5)
-- Use 4.7kΩ pullup resistors on SDA/SCL
+- (Optional) ADR pin: tie to GND for `0x28` (default) or 3.3V for `0x29`
+- Most breakouts have onboard SDA/SCL pullups; bare chips need 4.7 kΩ pullups
 
 ### 5. CSV Corruption / Missing Rows
 
@@ -153,7 +161,7 @@ For 8 hours: ~130 GB (use external USB SSD)
 
 ```bash
 # Record system metrics during acquisition
-python src/main.py --output-dir ./test_run &
+python -m src.main --output-dir ./test_run &
 PID=$!
 
 # In another terminal
@@ -178,7 +186,8 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(me
 - **OpenCV issues**: https://docs.opencv.org/
 - **GPS/NMEA spec**: https://www.sparkfun.com/datasheets/GPS/NMEA%20Reference%20Manual1.pdf
 - **Raspberry Pi docs**: https://www.raspberrypi.com/documentation/
-- **MPU-6050 datasheet**: Invensense official docs
+- **BNO055 datasheet**: Bosch Sensortec (search "BST-BNO055-DS000")
+- **Adafruit BNO055 library**: https://docs.circuitpython.org/projects/bno055/en/latest/
 
 ## Report an Issue
 
