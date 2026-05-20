@@ -1,0 +1,39 @@
+"""Sample metadata configuration."""
+
+{
+  "recording_start": "2026-05-01T10:00:00",
+  "recording_start_unix": 1746086400.0,
+  "recording_duration_seconds": 600.0,
+  "total_records": 18000,
+  "sensor_configuration": {
+    "camera": {
+      "device_id": 0,
+      "resolution_width": 1280,
+      "resolution_height": 720,
+      "fps": 30,
+      "codec": "MJPEG"
+    },
+    "gps": {
+      "port": "/dev/ttyUSB0",
+      "baudrate": 9600,
+      "type": "NMEA"
+    },
+    "imu": {
+      "enabled": false,
+      "sensor_type": "MPU6050",
+      "i2c_bus": 1,
+      "i2c_address": 104,
+      "sample_rate_hz": 100
+    }
+  },
+  "output_format": "CSV + Images",
+  "csv_columns": [
+    "timestamp (unix epoch)",
+    "latitude (decimal degrees)",
+    "longitude (decimal degrees)",
+    "image_path (relative)",
+    "ax, ay, az (m/s², acceleration)",
+    "gx, gy, gz (°/s, angular velocity)"
+  ],
+  "notes": "IMU fields may be null if IMU not available"
+}

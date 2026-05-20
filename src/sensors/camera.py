@@ -1,0 +1,125 @@
+import time
+from pathlib import Path
+from typing import Optional, Dict, Tuple
+
+from src.sensors.base_sensor import SensorDriver
+
+cv2 = None  # Lazy-imported in start() so mock-only environments don't need OpenCV.
+
+
+class CameraDriver(SensorDriver):
+    """USB camera driver — captures frames via OpenCV, with a mock fallback."""
+
+    def __init__(
+        self,
+        device_id: int = 0,
+        resolution: Tuple[int, int] = (1280, 720),
+        fps: int = 30,
+        codec: str = "MJPEG",
+        jpeg_quality: int = 90,
+        use_mock: bool = True,
+    ):
+        super().__init__()
+        self.device_id = device_id
+        self.resolution = resolution
+        self.fps = fps
+        self.codec = codec
+        self.jpeg_quality = int(jpeg_quality)
+        self.use_mock = use_mock
+        self.frame_count = 0
+        self._cap = None  # cv2.VideoCapture, set in start()
+
+    def start(self) -> bool:
+        if self.use_mock:
+            self._is_running = True
+            print("CameraDriver started (mock mode).")
+            return True
+
+        global cv2
+        if cv2 is None:
+            import cv2 as _cv2
+            cv2 = _cv2
+
+        cap = cv2.VideoCapture(self.device_id)
+        if not cap.isOpened():
+            print(f"CameraDriver: failed to open device {self.device_id}")
+            return False
+
+        codec_str = (self.codec or "").upper().replace("MJPEG", "MJPG")
+        if len(codec_str) >= 4:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*codec_str[:4]))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+        cap.set(cv2.CAP_PROP_FPS, self.fps)
+
+        actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        actual_fps = cap.get(cv2.CAP_PROP_FPS)
+        print(
+            f"CameraDriver opened device {self.device_id}: "
+            f"{actual_w}x{actual_h} @ {actual_fps:.1f} fps "
+            f"(requested {self.resolution[0]}x{self.resolution[1]} @ {self.fps})"
+        )
+
+        self._cap = cap
+        self._is_running = True
+        return True
+
+    def stop(self):
+        self._is_running = False
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+        print("CameraDriver stopped.")
+
+    def get_data(self) -> Optional[Dict]:
+        frame = self.get_frame()
+        if frame is None:
+            return None
+        timestamp, payload = frame
+        return {"timestamp": timestamp, **payload}
+
+    def get_frame(self) -> Optional[Tuple[float, Dict]]:
+        if not self._is_running:
+            return None
+
+        if self.use_mock:
+            timestamp = time.time()
+            self.frame_count += 1
+            return (
+                timestamp,
+                {
+                    "width": self.resolution[0],
+                    "height": self.resolution[1],
+                    "data": None,
+                    "mock": True,
+                },
+            )
+
+        ok, image = self._cap.read()
+        if not ok or image is None:
+            return None
+        timestamp = time.time()
+        self.frame_count += 1
+        h, w = image.shape[:2]
+        return (timestamp, {"width": w, "height": h, "data": image})
+
+    def save_frame(self, frame: Dict, timestamp: float, images_dir) -> Optional[str]:
+        images_dir = Path(images_dir)
+        images_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"frame_{int(timestamp * 1000)}.jpg"
+        out_path = images_dir / filename
+
+        image = frame.get("data") if isinstance(frame, dict) else None
+        if self.use_mock or image is None:
+            out_path.write_bytes(b"MOCK_FRAME")
+            return filename
+
+        params = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
+        if not cv2.imwrite(str(out_path), image, params):
+            print(f"CameraDriver: failed to write {out_path}")
+            return None
+        return filename
+
+    def get_frame_count(self) -> int:
+        return self.frame_count
