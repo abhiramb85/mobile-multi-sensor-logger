@@ -252,7 +252,7 @@ def main():
     parser.add_argument(
         "--real-imu",
         action="store_true",
-        help="Read from a real BNO055 over I2C via Adafruit Blinka (default: mock data; requires --enable-imu)"
+        help="Read from a real BNO085 over I2C via Adafruit Blinka (default: mock data; requires --enable-imu)"
     )
     
     args = parser.parse_args()

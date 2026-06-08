@@ -75,19 +75,20 @@ dd if=/dev/zero of=testfile bs=1M count=100 oflag=dsync
 ```bash
 i2cdetect -y 1
 # Expected addresses:
-#   0x28 = BNO055 (default, ADR pin low)
-#   0x29 = BNO055 (ADR pin high)
+#   0x4a = BNO085 (default — what the current driver expects)
+#   0x4b = BNO085 (alt address with PS1/PS0 pins reconfigured; not common)
+#   0x28 = BNO055 (legacy chip; not supported by current driver)
 #   0x68 = MPU-6050 (not supported by current driver)
 # If shows UU: device in use by kernel driver — fine, userspace library still works
 # If shows --: device not responding (check wiring)
 ```
 
-**Wiring checklist (BNO055)**:
+**Wiring checklist (BNO085)**:
 - VIN → 3.3V (Adafruit breakouts have a regulator but stick to 3.3 V)
 - GND → GND
 - SDA → GPIO 2 (pin 3)
 - SCL → GPIO 3 (pin 5)
-- (Optional) ADR pin: tie to GND for `0x28` (default) or 3.3V for `0x29`
+- Easiest connection: a STEMMA QT JST-SH-to-Dupont cable (Adafruit 4397) plugs into either STEMMA QT port on the breakout and the four Dupont ends go straight onto pins 1, 3, 5, 6
 - Most breakouts have onboard SDA/SCL pullups; bare chips need 4.7 kΩ pullups
 
 ### 5. CSV Corruption / Missing Rows
@@ -186,8 +187,9 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(me
 - **OpenCV issues**: https://docs.opencv.org/
 - **GPS/NMEA spec**: https://www.sparkfun.com/datasheets/GPS/NMEA%20Reference%20Manual1.pdf
 - **Raspberry Pi docs**: https://www.raspberrypi.com/documentation/
-- **BNO055 datasheet**: Bosch Sensortec (search "BST-BNO055-DS000")
-- **Adafruit BNO055 library**: https://docs.circuitpython.org/projects/bno055/en/latest/
+- **BNO085 datasheet**: Bosch Sensortec / Hillcrest (search "BNO080 BNO085 datasheet")
+- **SH-2 reference manual**: the protocol the BNO085 uses (CEVA / Hillcrest)
+- **Adafruit BNO08x library**: https://docs.circuitpython.org/projects/bno08x/en/latest/
 
 ## Report an Issue
 

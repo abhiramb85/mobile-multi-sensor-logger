@@ -8,7 +8,7 @@ This project integrates camera, GPS, and optional IMU sensors to collect geo-ref
 
 ## Features
 
-- **Multi-sensor acquisition**: USB camera via OpenCV, NMEA-0183 GPS via pyserial, BNO055 IMU via I2C (optional)
+- **Multi-sensor acquisition**: USB camera via OpenCV, NMEA-0183 GPS via pyserial, BNO085 IMU via I2C (optional)
 - **Mock fallbacks**: Every sensor driver runs in mock mode by default; opt-in to real hardware with `--real-camera`, `--real-gps`, `--real-imu`
 - **Hardware time synchronization**: GPS as reference clock with nearest-neighbor interpolation
 - **Structured dataset output**: Images directory + CSV log + metadata JSON
@@ -51,7 +51,7 @@ Refer to `docs/HARDWARE_SETUP.md` for detailed wiring and assembly instructions.
 
 - **Camera**: Any USB UVC camera supported by OpenCV (tested on a 12 MP USB webcam at 1280×720)
 - **GPS**: Any NMEA-0183 module over USB or UART. Default port `/dev/ttyACM0` matches native-USB modules like the Navilock NL-852EUSB (u-blox 8). Pass `--gps-port /dev/ttyUSB0` for USB-to-serial bridges.
-- **IMU**: Optional Bosch BNO055 over I2C (9-DOF with onboard sensor fusion). Default address `0x28`.
+- **IMU**: Optional Bosch BNO085 over I2C with SH-2 protocol (9-DOF with onboard sensor fusion). Default address `0x4a`.
 - **Compute**: Raspberry Pi 4 or 5; Python 3.8+
 
 ## Usage
@@ -80,7 +80,7 @@ Options:
 - `--enable-imu`: Include the IMU in this run (off by default — CSV columns are optional)
 - `--real-camera`: Capture from a real USB camera via OpenCV instead of mock frames
 - `--real-gps`: Read real NMEA sentences from the GPS port instead of mock data
-- `--real-imu`: Read from a real BNO055 over I2C instead of mock data (also needs `--enable-imu`)
+- `--real-imu`: Read from a real BNO085 over I2C instead of mock data (also needs `--enable-imu`)
 - `--fps`: Camera frames per second (default: 30)
 
 Output structure:
@@ -139,7 +139,7 @@ data/                 # Default data storage location
 ## Development Status
 
 - [x] Project structure
-- [x] Sensor drivers (camera via OpenCV, GPS via pyserial NMEA, BNO055 IMU via Adafruit Blinka — all with mock fallbacks)
+- [x] Sensor drivers (camera via OpenCV, GPS via pyserial NMEA, BNO085 IMU via Adafruit Blinka — all with mock fallbacks)
 - [x] Timestamp synchronization (GPS-referenced, nearest-neighbor)
 - [x] CSV logging + metadata.json
 - [x] Replay tool (video + folium map + matplotlib telemetry)

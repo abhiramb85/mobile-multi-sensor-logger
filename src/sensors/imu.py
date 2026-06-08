@@ -1,3 +1,4 @@
+import math
 import random
 import threading
 import time
@@ -5,18 +6,22 @@ from typing import Optional, Dict
 
 from src.sensors.base_sensor import SensorDriver
 
-# Lazy-imported in start() so mock-only environments don't need Blinka/BNO055 libs.
+# Lazy-imported in start() so mock-only environments don't need Blinka/BNO08x libs.
 board = None
 busio = None
-adafruit_bno055 = None
+BNO08X_I2C = None
+BNO_REPORT_ACCELEROMETER = None
+BNO_REPORT_GYROSCOPE = None
+
+_RAD_TO_DEG = 180.0 / math.pi
 
 
 class IMUDriver(SensorDriver):
-    """Bosch BNO055 9-DOF IMU driver — I2C via Adafruit Blinka, with mock fallback."""
+    """Bosch BNO085 9-DOF IMU driver — I2C via Adafruit Blinka, with mock fallback."""
 
     def __init__(
         self,
-        i2c_address: int = 0x28,
+        i2c_address: int = 0x4A,
         sample_rate_hz: int = 100,
         use_mock: bool = True,
     ):
@@ -38,23 +43,33 @@ class IMUDriver(SensorDriver):
             print("IMUDriver started (mock mode).")
             return True
 
-        global board, busio, adafruit_bno055
-        if adafruit_bno055 is None:
+        global board, busio, BNO08X_I2C, BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE
+        if BNO08X_I2C is None:
             try:
                 import board as _board
                 import busio as _busio
-                import adafruit_bno055 as _bno
+                from adafruit_bno08x.i2c import BNO08X_I2C as _BNO08X_I2C
+                from adafruit_bno08x import (
+                    BNO_REPORT_ACCELEROMETER as _ACCEL,
+                    BNO_REPORT_GYROSCOPE as _GYRO,
+                )
             except ImportError as e:
-                print(f"IMUDriver: missing BNO055 deps ({e}). "
-                      f"Install: pip install adafruit-circuitpython-bno055 adafruit-blinka")
+                print(f"IMUDriver: missing BNO085 deps ({e}). "
+                      f"Install: pip install adafruit-circuitpython-bno08x adafruit-blinka")
                 return False
-            board, busio, adafruit_bno055 = _board, _busio, _bno
+            board, busio = _board, _busio
+            BNO08X_I2C = _BNO08X_I2C
+            BNO_REPORT_ACCELEROMETER = _ACCEL
+            BNO_REPORT_GYROSCOPE = _GYRO
 
         try:
-            i2c = busio.I2C(board.SCL, board.SDA)
-            self._sensor = adafruit_bno055.BNO055_I2C(i2c, address=self.i2c_address)
+            i2c = busio.I2C(board.SCL, board.SDA, frequency=400_000)
+            self._sensor = BNO08X_I2C(i2c, address=self.i2c_address)
+            self._sensor.enable_feature(BNO_REPORT_ACCELEROMETER)
+            self._sensor.enable_feature(BNO_REPORT_GYROSCOPE)
+            time.sleep(0.2)  # SH-2 needs a moment before the first reports stream
         except Exception as e:
-            print(f"IMUDriver: failed to init BNO055 at 0x{self.i2c_address:02X}: {e}")
+            print(f"IMUDriver: failed to init BNO085 at 0x{self.i2c_address:02X}: {e}")
             return False
 
         self._stop_event.clear()
@@ -63,8 +78,8 @@ class IMUDriver(SensorDriver):
         )
         self._thread.start()
         self._is_running = True
-        print(f"IMUDriver opened BNO055 at 0x{self.i2c_address:02X} "
-              f"@ {self.sample_rate_hz} Hz (NDOF fusion mode).")
+        print(f"IMUDriver opened BNO085 at 0x{self.i2c_address:02X} "
+              f"@ {self.sample_rate_hz} Hz (SH-2 protocol, 400 kHz I2C).")
         return True
 
     def stop(self):
@@ -117,17 +132,23 @@ class IMUDriver(SensorDriver):
 
     def _read_sensor(self, timestamp: float) -> Optional[Dict]:
         try:
-            accel = self._sensor.acceleration  # (ax, ay, az) m/s^2, includes gravity
-            gyro = self._sensor.gyro           # (gx, gy, gz) deg/s
-        except Exception as e:
-            print(f"IMUDriver: I2C read error: {e}")
+            accel = self._sensor.acceleration   # (ax, ay, az) m/s^2
+            gyro = self._sensor.gyro            # (gx, gy, gz) rad/s
+        except Exception:
+            # BNO085 SH-2 reports can occasionally fail; main loop sees a stale value.
             return None
-        if accel is None or gyro is None or any(v is None for v in accel + gyro):
+        if accel is None or gyro is None:
+            return None
+        if any(v is None for v in tuple(accel) + tuple(gyro)):
             return None
         ax, ay, az = accel
         gx, gy, gz = gyro
         return {
             "timestamp": timestamp,
             "ax": float(ax), "ay": float(ay), "az": float(az),
-            "gx": float(gx), "gy": float(gy), "gz": float(gz),
+            # Convert rad/s -> deg/s so the schema stays human-friendly and consistent
+            # with mock-mode magnitudes.
+            "gx": float(gx) * _RAD_TO_DEG,
+            "gy": float(gy) * _RAD_TO_DEG,
+            "gz": float(gz) * _RAD_TO_DEG,
         }

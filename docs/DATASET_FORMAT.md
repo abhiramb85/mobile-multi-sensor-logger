@@ -98,9 +98,9 @@ dataset_root/
     },
     "imu": {
       "enabled": false,
-      "sensor_type": "BNO055",
+      "sensor_type": "BNO085",
       "i2c_bus": 1,
-      "i2c_address": 40,
+      "i2c_address": 74,
       "sample_rate_hz": 100
     }
   },

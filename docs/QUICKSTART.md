@@ -28,7 +28,7 @@ ls /dev/video*
 cat /dev/ttyACM0
 # For USB-to-serial bridges instead: cat /dev/ttyUSB0
 
-# Test IMU (if connected) — BNO055 should appear at address 28
+# Test IMU (if connected) — BNO085 should appear at address 4a
 i2cdetect -y 1
 ```
 

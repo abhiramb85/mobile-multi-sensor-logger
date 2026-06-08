@@ -13,7 +13,7 @@
 - **Any NMEA-0183 module** (USB or UART): the driver parses RMC + GGA from any talker ID (`$GP`, `$GN`, `$GL`, `$GA`, …) and verifies the `*XX` checksum.
 
 ### IMU (Optional)
-- **Bosch BNO055** (9-DOF with onboard sensor fusion): I2C, default address `0x28` (Adafruit breakouts), alt `0x29` if ADR pin tied high. Outputs accel/gyro/mag plus quaternion/Euler/calibration status from hardware fusion (NDOF mode). This is the tested module.
+- **Bosch BNO085** (9-DOF with onboard sensor fusion, SH-2 protocol): I2C, default address `0x4a` (Adafruit breakouts). Outputs accel/gyro/mag plus quaternion, game-rotation, linear acceleration, gravity, and calibration status. This is the tested module.
 - Other I2C IMUs (MPU-6050, ICM-20948, LSM6DSL) are not currently supported — would need a new driver in `src/sensors/imu.py`.
 
 ### Compute Platform
@@ -32,7 +32,8 @@
 - USB GPS module (Navilock NL-852EUSB recommended)
 
 ### Optional
-- BNO055 IMU breakout board (Adafruit or equivalent)
+- BNO085 IMU breakout board (Adafruit or equivalent)
+- (Recommended) STEMMA QT JST-SH-to-Dupont cable (Adafruit 4397) for one-step wiring
 - Breadboard and jumper wires (for I2C)
 - USB hub (if > 3 USB devices)
 - Weatherproof enclosure
@@ -44,12 +45,19 @@
 - GPS (Navilock NL-852EUSB) → any USB port → enumerates as `/dev/ttyACM0`
 - Power → USB-C (Pi 5) or USB-C/micro-USB (Pi 4)
 
-#### I2C Connections (for BNO055 IMU)
-- BNO055 VIN → RPi 3.3V (pin 1)  *(do NOT use 5V — the BNO055 chip itself is 3.3 V; Adafruit breakouts have a regulator but 3.3 V is safe everywhere)*
-- BNO055 GND → RPi GND (pin 6)
-- BNO055 SDA → RPi GPIO 2 (pin 3)
-- BNO055 SCL → RPi GPIO 3 (pin 5)
-- (Optional) BNO055 ADR → GND for `0x28` (default), or 3.3V for `0x29`
+#### I2C Connections (for BNO085 IMU)
+Easiest path: an Adafruit STEMMA QT cable (part 4397) — plug the JST-SH end into either STEMMA QT port on the breakout and the four Dupont ends onto pins 1, 3, 5, 6 on the Pi header.
+
+Manual wiring (4 wires):
+- BNO085 VIN → RPi 3.3V (pin 1)  *(stick to 3.3 V; the chip itself is 3.3 V even though Adafruit breakouts have a regulator)*
+- BNO085 GND → RPi GND (pin 6)
+- BNO085 SDA → RPi GPIO 2 (pin 3)
+- BNO085 SCL → RPi GPIO 3 (pin 5)
+
+For Pi 5, set I2C to 400 kHz in `/boot/firmware/config.txt` (the BNO085 SH-2 protocol works much more reliably at higher I2C speeds):
+```
+dtparam=i2c_arm=on,i2c_arm_baudrate=400000
+```
 
 #### Serial Connections (only if using a UART GPS instead of USB)
 - GPS TX → RPi RX (GPIO 15, pin 10)
@@ -89,7 +97,7 @@
    source venv/bin/activate
    
    # Install project dependencies (includes opencv-python, pyserial,
-   # adafruit-circuitpython-bno055, and adafruit-blinka)
+   # adafruit-circuitpython-bno08x, adafruit-blinka, and lgpio)
    pip install -r requirements.txt
    ```
 
@@ -115,21 +123,26 @@ cat /dev/serial0
 # Press Ctrl+C to stop.
 ```
 
-### Test IMU (BNO055)
+### Test IMU (BNO085)
 ```bash
 # First confirm the chip is on the bus
 i2cdetect -y 1
-# Expect "28" in the grid (or "29" if ADR is high). "UU" means a kernel driver
-# has claimed the address — fine, the userspace library still works.
+# Expect "4a" in the grid. "UU" means a kernel driver has claimed the address — fine,
+# the userspace library still works.
 ```
 ```python
-import board, busio, adafruit_bno055
-i2c = busio.I2C(board.SCL, board.SDA)
-sensor = adafruit_bno055.BNO055_I2C(i2c)  # add address=0x29 if you tied ADR high
-print("accel:", sensor.acceleration)        # m/s^2, includes gravity
-print("gyro:", sensor.gyro)                  # deg/s
-print("euler:", sensor.euler)                # heading, roll, pitch (deg)
-print("calibration:", sensor.calibration_status)  # (sys, gyro, accel, mag), each 0-3
+import board, busio
+from adafruit_bno08x.i2c import BNO08X_I2C
+from adafruit_bno08x import BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE
+
+i2c = busio.I2C(board.SCL, board.SDA, frequency=400_000)
+sensor = BNO08X_I2C(i2c)                          # default address 0x4a
+sensor.enable_feature(BNO_REPORT_ACCELEROMETER)
+sensor.enable_feature(BNO_REPORT_GYROSCOPE)
+
+import time; time.sleep(0.5)                       # SH-2 needs a moment to start reports
+print("accel:", sensor.acceleration)               # m/s^2, includes gravity
+print("gyro:",  sensor.gyro)                       # rad/s — convert *180/π for deg/s
 ```
 
 ## Outdoor Testing
@@ -175,7 +188,7 @@ python -m src.main --real-camera --camera-id 0
 ### I2C Device Not Found
 ```bash
 i2cdetect -y 1
-# Should show "28" for BNO055 (or "29" if ADR pin tied high)
+# Should show "4a" for BNO085
 # If not found: check wiring, ensure VIN→3.3V not 5V, run `sudo i2cdetect -r 1` to retry
 ```
 

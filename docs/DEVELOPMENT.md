@@ -9,7 +9,7 @@
 ## Phase 2: Sensor Data Acquisition Modules ✓
 - [x] Camera driver — OpenCV-based, real + mock (`src/sensors/camera.py`)
 - [x] GPS driver — pyserial NMEA-0183 parser (RMC + GGA, any talker ID), real + mock (`src/sensors/gps.py`)
-- [x] IMU driver — BNO055 over I2C via Adafruit Blinka, real + mock (`src/sensors/imu.py`)
+- [x] IMU driver — BNO085 over I2C (SH-2 protocol) via Adafruit Blinka, real + mock (`src/sensors/imu.py`)
 - [x] Mock fallback for every sensor so the pipeline runs end-to-end with no hardware
 - [x] Background sampler threads for GPS and IMU so the acquisition loop never blocks on a slow read
 - [x] NMEA checksum verification + status='V' / fix-quality=0 sentences ignored
@@ -69,11 +69,11 @@
 
 ## Known Issues & TODOs
 
-1. **IMU integration**: BNO055 driver implemented. Driver exposes the full fusion outputs internally (quaternion, Euler, linear acceleration) but only `ax/ay/az/gx/gy/gz` are persisted to CSV, per the fixed schema. Extending the schema is a future task.
+1. **IMU integration**: BNO085 driver implemented (SH-2 protocol over I2C at 400 kHz). The chip's full fusion outputs (quaternion, Euler, linear acceleration, magnetometer) are accessible via the library but only `ax/ay/az/gx/gy/gz` are persisted to CSV per the fixed schema. Gyro output converted from rad/s (BNO085 native) to deg/s for schema consistency. Extending the schema is a future task.
 2. **USB camera timestamps**: Drifts over time. RPi CSI camera recommended for better sync — would require a separate picamera2 code path on Pi 5.
 3. **GPS cold start**: 30+ seconds typical in open sky. Document in user guide.
 4. **Performance**: Raspberry Pi 4 may bottleneck at >20 fps full resolution. Test early on Pi 5 (USB 3.0 gives more headroom).
-5. **Real-hardware testing on Pi 5**: All real drivers exist but haven't been validated end-to-end on the user's actual hardware (12 MP USB camera, Navilock NL-852EUSB GPS, BNO055 IMU).
+5. **Real-hardware testing on Pi 5**: Camera and GPS drivers validated on actual hardware (12 MP USB camera, Navilock NL-852EUSB GPS). BNO085 IMU validation in progress.
 
 ## Next Steps
 
