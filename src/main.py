@@ -84,12 +84,17 @@ class DataAcquisitionSystem:
                     self.imu = None
 
             cam_mode = "MOCK" if mock_camera else "REAL"
-            gps_mode = "MOCK" if mock_gps else "REAL"
-            imu_mode = (
-                "disabled" if not self.config.imu.enabled
-                else ("MOCK" if mock_imu else "REAL")
-            )
-            print(f"System initialized successfully ({cam_mode} camera, {gps_mode} GPS, {imu_mode} IMU).")
+            if self.gps is None:
+                gps_mode = "NONE (failed)"
+            else:
+                gps_mode = "MOCK" if mock_gps else "REAL"
+            if not self.config.imu.enabled:
+                imu_mode = "disabled"
+            elif self.imu is None:
+                imu_mode = "NONE (failed)"
+            else:
+                imu_mode = "MOCK" if mock_imu else "REAL"
+            print(f"System initialized: {cam_mode} camera, {gps_mode} GPS, {imu_mode} IMU.")
             return True
         except Exception as e:
             print(f"Error during system initialization: {e}")
@@ -220,8 +225,8 @@ def main():
     parser.add_argument(
         "--gps-port", "-g",
         type=str,
-        default="/dev/ttyUSB0",
-        help="GPS serial port"
+        default="/dev/ttyACM0",
+        help="GPS serial port (default matches native-USB modules like Navilock NL-852EUSB; pass /dev/ttyUSB0 for USB-to-serial bridges)"
     )
     parser.add_argument(
         "--enable-imu",
