@@ -75,11 +75,21 @@ class DatasetReplayer:
     def get_record_count(self) -> int:
         """Get total records in dataset."""
         return len(self.records)
+
+    @staticmethod
+    def _maybe_float(value):
+        """Convert a CSV cell to float, returning None for blank/'None'/garbage."""
+        if value is None or value == "" or value == "None":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
     
     def replay_video(self, speed: float = 1.0, window_name: str = "Replay"):
         """
         Play synchronized video with GPS/IMU overlay.
-        
+
         Args:
             speed: Playback speed multiplier (1.0 = real-time)
             window_name: OpenCV window title
@@ -87,37 +97,41 @@ class DatasetReplayer:
         if not self.records:
             print("No records to replay")
             return
-        
+
+        # Probe whether OpenCV can actually open a window in this environment.
+        # On a headless Pi / SSH session this raises cv2.error; bail cleanly.
+        try:
+            cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+        except cv2.error as e:
+            print(f"No display available, skipping video playback ({e})")
+            print("Use --no-video to suppress this attempt, or run on a machine with a GUI.")
+            return
+
         print(f"\nReplaying {len(self.records)} frames at {speed}x speed")
         print("Controls: SPACE=pause, ESC=quit, LEFT/RIGHT=seek")
-        
+
         paused = False
         current_idx = 0
-        
+
         while current_idx < len(self.records):
             record = self.records[current_idx]
-            
-            # Load image
+
             image_path = self.images_dir / Path(record['image_path']).name
             if not image_path.exists():
                 print(f"Image not found: {image_path}")
                 current_idx += 1
                 continue
-            
+
             frame = cv2.imread(str(image_path))
             if frame is None:
                 current_idx += 1
                 continue
-            
-            # Draw overlays
+
             self._draw_overlay(frame, record)
-            
-            # Display
             cv2.imshow(window_name, frame)
-            
-            # Handle keyboard input
+
             key = cv2.waitKey(int(33 / speed)) & 0xFF  # 30 fps base
-            
+
             if key == ord(' '):  # SPACE: pause
                 paused = not paused
             elif key == 27:  # ESC: quit
@@ -126,33 +140,38 @@ class DatasetReplayer:
                 current_idx = max(0, current_idx - 10)
             elif key == 83 or key == ord('a'):  # RIGHT: seek forward
                 current_idx = min(len(self.records) - 1, current_idx + 10)
-            
+
             if not paused:
                 current_idx += 1
-        
+
         cv2.destroyAllWindows()
         print("Replay finished")
     
     def _draw_overlay(self, frame, record: Dict):
         """Draw GPS and IMU data on video frame."""
-        h, w = frame.shape[:2]
-        
-        # Text overlay
+        ts = self._maybe_float(record.get("timestamp"))
+        lat = self._maybe_float(record.get("latitude"))
+        lon = self._maybe_float(record.get("longitude"))
+        ax = self._maybe_float(record.get("ax"))
+        ay = self._maybe_float(record.get("ay"))
+        az = self._maybe_float(record.get("az"))
+        gx = self._maybe_float(record.get("gx"))
+        gy = self._maybe_float(record.get("gy"))
+        gz = self._maybe_float(record.get("gz"))
+
         text_lines = [
-            f"Time: {record.get('timestamp', 'N/A')}",
-            f"Lat: {record.get('latitude', 'N/A')}",
-            f"Lon: {record.get('longitude', 'N/A')}",
+            f"t = {ts:.3f}" if ts is not None else "t = N/A",
+            f"GPS: {lat:.6f}, {lon:.6f}" if (lat is not None and lon is not None) else "GPS: (no fix)",
         ]
-        
-        # Add IMU if available
-        if record.get('ax') and record.get('ax') != 'None':
-            text_lines.append(f"Accel: {record.get('ax', 'N/A'):.2f} m/s²")
-        
-        # Draw text
+        if None not in (ax, ay, az):
+            text_lines.append(f"a (m/s^2): {ax:+6.2f} {ay:+6.2f} {az:+6.2f}")
+        if None not in (gx, gy, gz):
+            text_lines.append(f"w (deg/s): {gx:+7.2f} {gy:+7.2f} {gz:+7.2f}")
+
         y_offset = 30
         for line in text_lines:
             cv2.putText(frame, line, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX,
-                       0.6, (0, 255, 0), 2)
+                        0.6, (0, 255, 0), 2)
             y_offset += 25
     
     def generate_map(self, output_path: str = "replay_map.html"):
@@ -198,46 +217,61 @@ class DatasetReplayer:
     
     def generate_telemetry_plot(self, output_path: str = "replay_telemetry.png"):
         """
-        Generate plot of IMU telemetry over time.
-        
+        Generate a plot of all six IMU channels (accel + gyro) over time.
+
         Args:
             output_path: PNG output filename
         """
         if not HAS_MATPLOTLIB:
             print("matplotlib not installed. Install with: pip install matplotlib")
             return
-        
-        # Extract IMU data
+
         timestamps = []
-        accelerations = []
-        
+        ax_s, ay_s, az_s = [], [], []
+        gx_s, gy_s, gz_s = [], [], []
+
         for record in self.records:
-            try:
-                ts = float(record.get('timestamp', 0))
-                ax = float(record.get('ax', 0)) if record.get('ax') and record.get('ax') != 'None' else 0
-                timestamps.append(ts)
-                accelerations.append(ax)
-            except ValueError:
-                pass
-        
+            ts = self._maybe_float(record.get("timestamp"))
+            ax = self._maybe_float(record.get("ax"))
+            ay = self._maybe_float(record.get("ay"))
+            az = self._maybe_float(record.get("az"))
+            gx = self._maybe_float(record.get("gx"))
+            gy = self._maybe_float(record.get("gy"))
+            gz = self._maybe_float(record.get("gz"))
+            if None in (ts, ax, ay, az, gx, gy, gz):
+                continue
+            timestamps.append(ts)
+            ax_s.append(ax); ay_s.append(ay); az_s.append(az)
+            gx_s.append(gx); gy_s.append(gy); gz_s.append(gz)
+
         if not timestamps:
             print("No telemetry data found")
             return
-        
-        # Normalize timestamps to start at 0
-        if timestamps:
-            min_ts = min(timestamps)
-            timestamps = [t - min_ts for t in timestamps]
-        
-        # Plot
-        plt.figure(figsize=(12, 4))
-        plt.plot(timestamps, accelerations, label='X-Acceleration')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Acceleration (m/s²)')
-        plt.title('IMU Telemetry')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(output_path)
+
+        t0 = min(timestamps)
+        t = [ts - t0 for ts in timestamps]
+
+        fig, (top, bot) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+        top.plot(t, ax_s, label="ax", alpha=0.8)
+        top.plot(t, ay_s, label="ay", alpha=0.8)
+        top.plot(t, az_s, label="az", alpha=0.8)
+        top.set_ylabel("Acceleration (m/s²)")
+        top.set_title(f"IMU Telemetry ({len(t)} samples)")
+        top.legend(loc="upper right")
+        top.grid(True, alpha=0.3)
+
+        bot.plot(t, gx_s, label="gx", alpha=0.8)
+        bot.plot(t, gy_s, label="gy", alpha=0.8)
+        bot.plot(t, gz_s, label="gz", alpha=0.8)
+        bot.set_xlabel("Time (s)")
+        bot.set_ylabel("Angular velocity (deg/s)")
+        bot.legend(loc="upper right")
+        bot.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=120)
+        plt.close(fig)
         print(f"Telemetry plot saved to {output_path}")
 
 
@@ -266,24 +300,27 @@ def main():
         action="store_true",
         help="Generate IMU telemetry plot"
     )
-    
+    parser.add_argument(
+        "--no-video",
+        action="store_true",
+        help="Skip the video playback step (useful when running headless / over SSH)"
+    )
+
     args = parser.parse_args()
-    
-    # Load dataset
+
     try:
         replayer = DatasetReplayer(args.dataset_dir)
     except Exception as e:
         print(f"Error loading dataset: {e}")
         return
-    
-    # Generate outputs
+
     if args.map:
         replayer.generate_map()
     if args.telemetry:
         replayer.generate_telemetry_plot()
-    
-    # Replay video
-    replayer.replay_video(speed=args.speed)
+
+    if not args.no_video:
+        replayer.replay_video(speed=args.speed)
 
 
 if __name__ == "__main__":
