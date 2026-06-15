@@ -215,6 +215,71 @@ class DatasetReplayer:
         m.save(output_path)
         print(f"Map saved to {output_path}")
     
+    def _infer_fps(self) -> float:
+        """Infer playback FPS from metadata, else CSV timestamps, else 30."""
+        cam_cfg = (self.metadata or {}).get("sensor_configuration", {}).get("camera", {})
+        cam_fps = cam_cfg.get("fps")
+        if isinstance(cam_fps, (int, float)) and cam_fps > 0:
+            return float(cam_fps)
+        ts = [self._maybe_float(r.get("timestamp")) for r in self.records]
+        ts = [t for t in ts if t is not None]
+        if len(ts) < 2:
+            return 30.0
+        duration = ts[-1] - ts[0]
+        if duration <= 0:
+            return 30.0
+        return (len(ts) - 1) / duration
+
+    def export_video(self, output_path: str = "replay_video.mp4", fps: float = None):
+        """
+        Stitch the synchronized JPEG frames into an MP4 with GPS/IMU overlay.
+        Works headless — no display required. Useful for sharing the dataset
+        as a single file you can play in any video viewer.
+        """
+        if not self.records:
+            print("No records to export")
+            return
+
+        if fps is None:
+            fps = self._infer_fps()
+
+        first_frame = None
+        for record in self.records:
+            image_path = self.images_dir / Path(record["image_path"]).name
+            if image_path.exists():
+                first_frame = cv2.imread(str(image_path))
+                if first_frame is not None:
+                    break
+        if first_frame is None:
+            print("No readable images found; cannot export video")
+            return
+
+        h, w = first_frame.shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+        if not writer.isOpened():
+            print(f"Failed to open video writer for {output_path}")
+            return
+
+        n_written = 0
+        n_missing = 0
+        for record in self.records:
+            image_path = self.images_dir / Path(record["image_path"]).name
+            if not image_path.exists():
+                n_missing += 1
+                continue
+            frame = cv2.imread(str(image_path))
+            if frame is None:
+                n_missing += 1
+                continue
+            self._draw_overlay(frame, record)
+            writer.write(frame)
+            n_written += 1
+
+        writer.release()
+        print(f"Video saved to {output_path} "
+              f"({n_written} frames at {fps:.1f} fps, {n_missing} skipped)")
+
     def generate_telemetry_plot(self, output_path: str = "replay_telemetry.png"):
         """
         Generate a plot of all six IMU channels (accel + gyro) over time.
@@ -303,7 +368,12 @@ def main():
     parser.add_argument(
         "--no-video",
         action="store_true",
-        help="Skip the video playback step (useful when running headless / over SSH)"
+        help="Skip the live video playback step (useful when running headless / over SSH)"
+    )
+    parser.add_argument(
+        "--export-video",
+        action="store_true",
+        help="Stitch JPEGs into an MP4 file (replay_video.mp4) with overlays — works headless"
     )
 
     args = parser.parse_args()
@@ -318,6 +388,8 @@ def main():
         replayer.generate_map()
     if args.telemetry:
         replayer.generate_telemetry_plot()
+    if args.export_video:
+        replayer.export_video()
 
     if not args.no_video:
         replayer.replay_video(speed=args.speed)
