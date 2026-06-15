@@ -3,8 +3,9 @@
 import argparse
 import csv
 import json
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 import time
 
 import cv2
@@ -85,6 +86,27 @@ class DatasetReplayer:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _parse_timestamp(value) -> Optional[float]:
+        """Parse a CSV timestamp cell to seconds since Unix epoch.
+
+        Handles both the current ISO 8601 UTC format
+        (e.g. '2026-06-14T06:24:02.040558+00:00') and legacy float epoch
+        strings written by earlier versions of the logger.
+        """
+        if value is None or value == "" or value == "None":
+            return None
+        # Try float first — cheaper, and covers legacy datasets.
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            pass
+        # Then ISO 8601. fromisoformat handles the '+00:00' suffix natively in 3.11+.
+        try:
+            return datetime.fromisoformat(value).timestamp()
+        except (TypeError, ValueError):
+            return None
     
     def replay_video(self, speed: float = 1.0, window_name: str = "Replay"):
         """
@@ -149,7 +171,7 @@ class DatasetReplayer:
     
     def _draw_overlay(self, frame, record: Dict):
         """Draw GPS and IMU data on video frame."""
-        ts = self._maybe_float(record.get("timestamp"))
+        ts_raw = record.get("timestamp")
         lat = self._maybe_float(record.get("latitude"))
         lon = self._maybe_float(record.get("longitude"))
         ax = self._maybe_float(record.get("ax"))
@@ -160,7 +182,7 @@ class DatasetReplayer:
         gz = self._maybe_float(record.get("gz"))
 
         text_lines = [
-            f"t = {ts:.3f}" if ts is not None else "t = N/A",
+            f"t = {ts_raw}" if ts_raw else "t = N/A",
             f"GPS: {lat:.6f}, {lon:.6f}" if (lat is not None and lon is not None) else "GPS: (no fix)",
         ]
         if None not in (ax, ay, az):
@@ -221,7 +243,7 @@ class DatasetReplayer:
         cam_fps = cam_cfg.get("fps")
         if isinstance(cam_fps, (int, float)) and cam_fps > 0:
             return float(cam_fps)
-        ts = [self._maybe_float(r.get("timestamp")) for r in self.records]
+        ts = [self._parse_timestamp(r.get("timestamp")) for r in self.records]
         ts = [t for t in ts if t is not None]
         if len(ts) < 2:
             return 30.0
@@ -296,7 +318,7 @@ class DatasetReplayer:
         gx_s, gy_s, gz_s = [], [], []
 
         for record in self.records:
-            ts = self._maybe_float(record.get("timestamp"))
+            ts = self._parse_timestamp(record.get("timestamp"))
             ax = self._maybe_float(record.get("ax"))
             ay = self._maybe_float(record.get("ay"))
             az = self._maybe_float(record.get("az"))

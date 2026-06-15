@@ -31,7 +31,7 @@ dataset_root/
 
 | Column | Type | Required | Format | Notes |
 |--------|------|----------|--------|-------|
-| timestamp | Float | Yes | Unix epoch (seconds.milliseconds) | E.g., 1651316400.123 |
+| timestamp | String | Yes | ISO 8601 UTC, microsecond precision | E.g., `2026-06-14T06:24:02.040558+00:00` |
 | latitude | Float | Optional | Decimal degrees | Range: -90 to +90; Null if no GPS fix |
 | longitude | Float | Optional | Decimal degrees | Range: -180 to +180; Null if no GPS fix |
 | image_path | String | Yes | Relative path from dataset root | E.g., `images/frame_1651316400123.jpg` |
@@ -45,9 +45,9 @@ dataset_root/
 ### Example Row
 
 ```csv
-1651316400.123,52.52001,13.40500,images/frame_1651316400123.jpg,0.05,-0.02,9.81,0.01,0.02,-0.01
-1651316400.160,52.52002,13.40501,images/frame_1651316400160.jpg,0.04,-0.01,9.82,0.00,0.03,-0.01
-1651316400.197,,,,,,,,
+2026-06-14T06:24:02.040558+00:00,52.52001,13.40500,images/frame_1781475842040.jpg,0.05,-0.02,9.81,0.01,0.02,-0.01
+2026-06-14T06:24:02.073891+00:00,52.52002,13.40501,images/frame_1781475842073.jpg,0.04,-0.01,9.82,0.00,0.03,-0.01
+2026-06-14T06:24:02.107224+00:00,,,images/frame_1781475842107.jpg,,,,,,
 ```
 
 ### Null Value Representation

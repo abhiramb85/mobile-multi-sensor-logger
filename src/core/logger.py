@@ -5,7 +5,18 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _format_timestamp(ts) -> str:
+    """Render a float Unix epoch as an ISO 8601 UTC string (microsecond precision).
+    Falls back to the raw value if the input isn't numeric."""
+    if ts is None or ts == "":
+        return ""
+    try:
+        return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError):
+        return str(ts)
 
 
 class DataLogger:
@@ -64,7 +75,7 @@ class DataLogger:
                 "sensor_configuration": self.sensor_config,
                 "output_format": "CSV + Images",
                 "csv_columns": [
-                    "timestamp (unix epoch)",
+                    "timestamp (ISO 8601 UTC, microsecond precision)",
                     "latitude (decimal degrees)",
                     "longitude (decimal degrees)",
                     "image_path (relative)",
@@ -94,9 +105,10 @@ class DataLogger:
         """
         try:
             if self.csv_writer:
-                # Flatten record, handle None values
+                # Render timestamp as ISO 8601 UTC for human readability; other
+                # fields keep their numeric form.
                 row = {
-                    'timestamp': record.get('timestamp'),
+                    'timestamp': _format_timestamp(record.get('timestamp')),
                     'latitude': record.get('latitude'),
                     'longitude': record.get('longitude'),
                     'image_path': record.get('image_path'),
@@ -152,7 +164,7 @@ class DataLogger:
                 "sensor_configuration": self.sensor_config,
                 "output_format": "CSV + Images",
                 "csv_columns": [
-                    "timestamp (unix epoch)",
+                    "timestamp (ISO 8601 UTC, microsecond precision)",
                     "latitude (decimal degrees)",
                     "longitude (decimal degrees)",
                     "image_path (relative)",
