@@ -28,6 +28,8 @@ class CameraDriver(SensorDriver):
         self.use_mock = use_mock
         self.frame_count = 0
         self._cap = None  # cv2.VideoCapture, set in start()
+        self._mock_period = 1.0 / max(1, int(fps))  # used to pace mock get_frame()
+        self._last_mock_t = 0.0
 
     def start(self) -> bool:
         if self.use_mock:
@@ -84,7 +86,15 @@ class CameraDriver(SensorDriver):
             return None
 
         if self.use_mock:
+            # Pace the mock at the configured FPS so partial-real recordings
+            # (--real-gps without --real-camera, etc.) don't run the main loop
+            # at full CPU speed and produce 100k placeholder files in a minute.
+            now = time.time()
+            wait = self._mock_period - (now - self._last_mock_t)
+            if wait > 0:
+                time.sleep(wait)
             timestamp = time.time()
+            self._last_mock_t = timestamp
             self.frame_count += 1
             return (
                 timestamp,
