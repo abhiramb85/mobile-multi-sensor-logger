@@ -6,6 +6,9 @@ pandas>=1.1.0
 folium>=0.12.0
 matplotlib>=3.3.0
 
+# Web viewer (Flask app + static SPA)
+Flask>=2.0
+
 # IMU (BNO085 over I2C with SH-2 protocol; Raspberry Pi only)
 adafruit-circuitpython-bno08x>=1.2.0
 adafruit-blinka>=8.0.0

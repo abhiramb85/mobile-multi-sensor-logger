@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Sensor Dataset Viewer</title>
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin="" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Multi-Sensor Dataset Viewer</h1>
+    <div class="controls">
+      <label>
+        Run:
+        <select id="run-select"></select>
+      </label>
+      <span id="run-stats" class="muted"></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="row">
+      <div class="panel image-panel">
+        <h2>Frame</h2>
+        <div class="frame-wrap">
+          <img id="current-frame" alt="current frame" />
+          <div id="frame-overlay" class="frame-overlay"></div>
+        </div>
+      </div>
+
+      <div class="panel map-panel">
+        <h2>GPS Track</h2>
+        <div id="map"></div>
+      </div>
+    </section>
+
+    <section class="panel scrubber-panel">
+      <div class="scrubber-row">
+        <button id="play-btn">▶ Play</button>
+        <input id="scrubber" type="range" min="0" max="0" value="0" step="1" />
+        <span id="time-readout" class="muted">—</span>
+      </div>
+    </section>
+
+    <section class="row">
+      <div class="panel chart-panel">
+        <h2>Acceleration (m/s²)</h2>
+        <canvas id="accel-chart"></canvas>
+      </div>
+      <div class="panel chart-panel">
+        <h2>Angular velocity (deg/s)</h2>
+        <canvas id="gyro-chart"></canvas>
+      </div>
+    </section>
+
+    <section class="panel metadata-panel">
+      <h2>Metadata</h2>
+      <pre id="metadata-block" class="muted">(select a run)</pre>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

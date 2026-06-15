@@ -104,7 +104,7 @@ timestamp,latitude,longitude,image_path,ax,ay,az,gx,gy,gz
 - `ax, ay, az`: Acceleration in m/s² (or null if no IMU)
 - `gx, gy, gz`: Angular velocity in °/s (or null if no IMU)
 
-### Replay Tool
+### Replay Tool (CLI)
 
 ```bash
 python -m src.tools.replay --dataset-dir ./data/run001 --speed 1.0
@@ -112,8 +112,20 @@ python -m src.tools.replay --dataset-dir ./data/run001 --speed 1.0
 
 Displays:
 - Synchronized video playback
-- GPS trajectory map
-- IMU telemetry graphs (if available)
+- GPS trajectory map (folium HTML)
+- IMU telemetry graphs (matplotlib)
+- Optional MP4 export with `--export-video` (works headless on the Pi)
+
+### Web Viewer
+
+A local browser-based viewer for recorded datasets — handy when you're SSHing into the Pi from a phone or laptop and don't have a display for the CLI replay tool.
+
+```bash
+python -m src.web.server --data-dir ./data
+# then open http://<pi-ip>:5000 in any browser
+```
+
+Shows the run selector, current frame with sensor overlay, GPS track on a Leaflet map (with a moving marker), and accel + gyro plots with a "now" cursor. Play / pause / scrub through the recording. Mobile-friendly responsive layout.
 
 ## Project Structure
 

@@ -53,12 +53,20 @@ python -m src.main \
 ```
 
 ### 4. Replay Dataset
+
+CLI replay (headless-safe; also exports MP4 with `--export-video`):
 ```bash
 python -m src.tools.replay \
   --dataset-dir ./data/test_run \
   --speed 1.0 \
   --map \
   --telemetry
+```
+
+Or browser-based viewer (works over SSH, phone-friendly):
+```bash
+python -m src.web.server --data-dir ./data
+# Open http://<pi-ip>:5000 from any device on the network
 ```
 
 ## Hardware Quick Setup

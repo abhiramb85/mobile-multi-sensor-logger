@@ -24,12 +24,15 @@
 - [ ] Validate CSV format and file consistency
 - [ ] Profile performance on target hardware (Raspberry Pi)
 
-## Phase 4: Visualization & Replay Tool
-- [x] Replay tool skeleton (`src/tools/replay.py`)
-- [ ] Test video playback with overlays
-- [ ] Implement GPS map generation (folium)
-- [ ] Add IMU telemetry plots (matplotlib)
-- [ ] Add seek/pause controls
+## Phase 4: Visualization & Replay Tool ✓
+- [x] Replay tool (`src/tools/replay.py`): synchronized JPEG playback with overlay
+- [x] GPS map generation (folium HTML)
+- [x] IMU telemetry plots (matplotlib, 6-channel)
+- [x] MP4 video export for headless / shareable playback
+- [x] Headless-safe (`--no-video`, catches missing-display errors)
+- [x] Local web viewer (`src/web/server.py` + static SPA): browser-based,
+      phone-friendly, runs over SSH; Leaflet map + Chart.js plots +
+      play/pause/scrub controls
 
 ## Phase 5: Integration, Testing & Validation
 - [ ] End-to-end lab test (camera + GPS + optional IMU)
