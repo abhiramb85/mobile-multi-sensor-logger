@@ -24,11 +24,25 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import statistics
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+
+_EARTH_RADIUS_M = 6_371_000.0  # WGS-84 mean radius
+
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two (lat, lon) points in metres."""
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
 
 
 REQUIRED_COLUMNS = [
@@ -231,6 +245,29 @@ def validate(dataset_dir: Path, strict: bool = False) -> ValidationReport:
         report.warn("0% GPS coverage — no rows have lat/lon (indoor run, antenna issue, or no fix yet)")
     else:
         report.ok(f"GPS coverage: {gps_rows}/{len(rows)} rows ({pct:.1f}%)")
+
+        # Distance traveled (sum of great-circle distances between consecutive fixes)
+        # and average speed. Useful headline statistics for the bicycle experiment.
+        fixes = []
+        for r, t in zip(rows, timestamps):
+            lat = _maybe_float(r.get("latitude"))
+            lon = _maybe_float(r.get("longitude"))
+            if lat is not None and lon is not None and t is not None:
+                fixes.append((t, lat, lon))
+        total_m = 0.0
+        for (_, la1, lo1), (_, la2, lo2) in zip(fixes, fixes[1:]):
+            total_m += haversine_m(la1, lo1, la2, lo2)
+        if len(fixes) >= 2:
+            duration_s = fixes[-1][0] - fixes[0][0]
+            km = total_m / 1000.0
+            if duration_s > 0:
+                mean_kmh = (total_m / duration_s) * 3.6
+                report.ok(
+                    f"Distance traveled (GPS): {km:.3f} km over {duration_s:.1f} s "
+                    f"(mean speed {mean_kmh:.1f} km/h)"
+                )
+            else:
+                report.ok(f"Distance traveled (GPS): {km:.3f} km (duration unknown)")
 
     # --- IMU coverage ---
     imu_keys = ("ax", "ay", "az", "gx", "gy", "gz")
