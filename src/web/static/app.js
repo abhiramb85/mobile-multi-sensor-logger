@@ -3,11 +3,12 @@
 // Multi-sensor dataset viewer — vanilla JS, single page.
 // Build marker: bumped each commit so users can verify their browser
 // loaded the latest JS by checking the console message below.
-const VIEWER_BUILD = "2026-06-24-diag";
+const VIEWER_BUILD = "2026-06-24-speed";
 console.log(`[viewer] app.js loaded — build ${VIEWER_BUILD}`);
 
 const runSelect = document.getElementById("run-select");
 const runStats = document.getElementById("run-stats");
+const speedSelect = document.getElementById("speed-select");
 const currentFrame = document.getElementById("current-frame");
 const frameOverlay = document.getElementById("frame-overlay");
 const scrubber = document.getElementById("scrubber");
@@ -301,11 +302,16 @@ function startPlay() {
     console.warn("[viewer] startPlay: no rows loaded — nothing to play");
     return;
   }
-  console.log(`[viewer] startPlay: ${state.rows.length} frames at ${state.fps} fps`);
+  const speed = Number(speedSelect?.value) || 1;
+  // Effective per-frame interval. At 1× speed and 60 fps, that's 16 ms — too
+  // fast to actually see on short recordings. Floor at 50 ms so even a tiny
+  // 8-frame test plays back over ~400 ms instead of vanishing in 130 ms.
+  const period = Math.max(50, 1000 / Math.max(1, state.fps * speed));
+  const totalSec = (state.rows.length * period) / 1000;
+  console.log(`[viewer] startPlay: ${state.rows.length} frames @ ${state.fps} fps, speed=${speed}×, period=${period.toFixed(1)} ms (≈${totalSec.toFixed(1)}s playback)`);
   state.playing = true;
   playBtn.textContent = "❚❚ Pause";
   state.lastFrameAt = performance.now();
-  const period = 1000 / Math.max(1, state.fps);
   const tick = (now) => {
     if (!state.playing) return;
     if (now - state.lastFrameAt >= period) {

@@ -114,6 +114,18 @@
     <section class="panel scrubber-panel">
       <div class="scrubber-row">
         <button id="play-btn">▶ Play</button>
+        <label class="speed-control muted">
+          Speed
+          <select id="speed-select">
+            <option value="0.1">0.1×</option>
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+            <option value="8">8×</option>
+          </select>
+        </label>
         <input id="scrubber" type="range" min="0" max="0" value="0" step="1" />
         <span id="time-readout" class="muted">—</span>
       </div>
