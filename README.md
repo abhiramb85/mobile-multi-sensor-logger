@@ -116,16 +116,32 @@ Displays:
 - IMU telemetry graphs (matplotlib)
 - Optional MP4 export with `--export-video` (works headless on the Pi)
 
-### Web Viewer
+### Web Viewer + Control Panel
 
-A local browser-based viewer for recorded datasets — handy when you're SSHing into the Pi from a phone or laptop and don't have a display for the CLI replay tool.
+A local browser-based UI for recording, reviewing, and visualizing datasets — usable from any phone or laptop on the same network as the Pi. No SSH needed for normal operation.
 
 ```bash
 python -m src.web.server --data-dir ./data
-# then open http://<pi-ip>:5000 in any browser
+# then open http://<pi-ip>:5000 (or http://raspberrypi.local:5000) in any browser
 ```
 
-Shows the run selector, current frame with sensor overlay, GPS track on a Leaflet map (with a moving marker), and accel + gyro plots with a "now" cursor. Play / pause / scrub through the recording. Mobile-friendly responsive layout.
+**Record panel** (top of page):
+- Toggle which sensors run real vs mock (camera / GPS / IMU)
+- FPS slider (1–60)
+- Duration field with quick presets (30 s, 5 min, 30 min)
+- Optional output-name field (auto-generates `ride_YYYYMMDD_HHMMSS` if blank)
+- Start button spawns the acquisition subprocess; recording survives even if you close the browser or kill the web server
+- Live status during recording: pulsing indicator, elapsed time, frame/record counts, progress bar, last 30 log lines
+- Stop button sends SIGINT so `metadata.json` and `data.csv` are finalized cleanly
+
+**Review panel** (below):
+- Run selector dropdown with size
+- Current frame with sensor overlay
+- GPS track on a Leaflet map with moving marker
+- Accel + gyro plots (Chart.js) with a "now" cursor
+- Play / pause / scrub through the recording
+
+When a recording finishes, the run dropdown auto-refreshes and selects the new dataset so you can immediately review it.
 
 ## Project Structure
 

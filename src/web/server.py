@@ -1,9 +1,9 @@
 """
-Local web viewer for recorded multi-sensor datasets.
+Local web viewer + control panel for the multi-sensor logger.
 
-Single Flask app serves both the API and the static HTML/JS/CSS viewer.
-Designed for local use on the Pi or any machine that has the data
-directory mounted; not hardened for the public internet.
+Single Flask app serves the static SPA, the read-only dataset API, and a
+small recording-control API that spawns / monitors / stops the acquisition
+process. Designed for local LAN use; not hardened for the public internet.
 
 Run:
     python -m src.web.server
@@ -12,11 +12,14 @@ Run:
 Then open http://<host-ip>:5000 in any browser.
 
 API:
-    GET /                                   -> the viewer HTML
-    GET /api/runs                           -> list of dataset directories
-    GET /api/runs/<run>/metadata            -> metadata.json
-    GET /api/runs/<run>/data                -> CSV rows as JSON (?stride=N to thin)
-    GET /api/runs/<run>/images/<filename>   -> JPEG bytes
+    GET  /                                   -> the viewer HTML
+    GET  /api/runs                           -> list of dataset directories
+    GET  /api/runs/<run>/metadata            -> metadata.json
+    GET  /api/runs/<run>/data                -> CSV rows as JSON (?stride=N)
+    GET  /api/runs/<run>/images/<filename>   -> JPEG bytes
+    GET  /api/recording/status               -> live recording status
+    POST /api/recording/start                -> spawn an acquisition subprocess
+    POST /api/recording/stop                 -> SIGINT the active recording
 """
 
 from __future__ import annotations
@@ -25,8 +28,14 @@ import argparse
 import csv
 import json
 import os
+import re
+import signal
+import subprocess
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from threading import Lock
+from typing import Dict, List, Optional
 
 from flask import (
     Flask,
@@ -37,6 +46,249 @@ from flask import (
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_PROGRESS_RE = re.compile(r"\[(\d+\.?\d*)s\]\s+Frames:\s+(\d+),\s+Records:\s+(\d+)")
+_LOG_TAIL_LINES = 30
+_VALID_BOOL_KEYS = ("real_camera", "real_gps", "enable_imu", "real_imu")
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _sanitize_name(name: Optional[str]) -> str:
+    """Return a filesystem-safe run name; auto-generate one if empty."""
+    if not name:
+        return "ride_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = name.strip()
+    if not _NAME_RE.match(name):
+        raise ValueError(
+            "output_name must contain only letters, digits, '.', '_', '-' "
+            "(no spaces or path separators)"
+        )
+    if len(name) > 80:
+        raise ValueError("output_name too long")
+    return name
+
+
+def _pid_alive(pid: Optional[int]) -> bool:
+    if not pid:
+        return False
+    try:
+        if os.name == "posix":
+            os.kill(pid, 0)
+            return True
+        # Windows fallback
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return str(pid) in result.stdout
+    except (ProcessLookupError, PermissionError, OSError, subprocess.SubprocessError):
+        return False
+
+
+def _validate_opts(raw: Dict) -> Dict:
+    if not isinstance(raw, dict):
+        raise ValueError("body must be a JSON object")
+    try:
+        fps = int(raw.get("fps", 30))
+    except (TypeError, ValueError):
+        raise ValueError("fps must be an integer")
+    if not (1 <= fps <= 120):
+        raise ValueError("fps must be between 1 and 120")
+    try:
+        duration = int(raw.get("duration", 60))
+    except (TypeError, ValueError):
+        raise ValueError("duration must be an integer (seconds)")
+    if not (0 <= duration <= 24 * 60 * 60):
+        raise ValueError("duration must be between 0 (unlimited) and 86400 seconds")
+    try:
+        camera_id = int(raw.get("camera_id", 0))
+    except (TypeError, ValueError):
+        raise ValueError("camera_id must be an integer")
+    if not (0 <= camera_id <= 10):
+        raise ValueError("camera_id out of range")
+
+    out = {
+        "fps": fps,
+        "duration": duration,
+        "camera_id": camera_id,
+        "output_name": raw.get("output_name") or "",
+    }
+    for key in _VALID_BOOL_KEYS:
+        out[key] = bool(raw.get(key, False))
+    # Convenience: --real-imu without --enable-imu would silently no-op; auto-enable.
+    if out["real_imu"] and not out["enable_imu"]:
+        out["enable_imu"] = True
+    return out
+
+
+class RecordingManager:
+    """Tracks the single active acquisition subprocess (if any).
+
+    Assumes the Flask dev server runs as a single process; simple in-memory
+    state plus a small `.recording.json` file on disk for restart-safety.
+    """
+
+    def __init__(self, data_dir: Path):
+        self.data_dir = Path(data_dir).resolve()
+        self.state_path = self.data_dir / ".recording.json"
+        self.lock = Lock()
+        self.proc: Optional[subprocess.Popen] = None
+        self.state: Optional[Dict] = self._load_state()
+        if self.state and not _pid_alive(self.state.get("pid")):
+            self.state = None
+            self._save_state()
+
+    def _load_state(self) -> Optional[Dict]:
+        if not self.state_path.is_file():
+            return None
+        try:
+            with open(self.state_path) as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def _save_state(self):
+        try:
+            if self.state is None:
+                if self.state_path.exists():
+                    self.state_path.unlink()
+                return
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.state_path, "w") as f:
+                json.dump(self.state, f, indent=2)
+        except OSError:
+            pass
+
+    def is_running(self) -> bool:
+        if self.proc is not None:
+            return self.proc.poll() is None
+        if self.state and self.state.get("pid"):
+            return _pid_alive(self.state["pid"])
+        return False
+
+    def start(self, opts: Dict) -> Dict:
+        with self.lock:
+            if self.is_running():
+                raise RuntimeError("a recording is already in progress")
+
+            params = _validate_opts(opts)
+            out_name = _sanitize_name(params["output_name"])
+            out_dir = (self.data_dir / out_name).resolve()
+            if self.data_dir not in out_dir.parents:
+                raise ValueError("output_name escapes data dir")
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            cmd = [
+                sys.executable, "-m", "src.main",
+                "--output-dir", str(out_dir),
+                "--duration", str(params["duration"]),
+                "--fps", str(params["fps"]),
+                "--camera-id", str(params["camera_id"]),
+            ]
+            if params["real_camera"]:
+                cmd.append("--real-camera")
+            if params["real_gps"]:
+                cmd.append("--real-gps")
+            if params["enable_imu"]:
+                cmd.append("--enable-imu")
+            if params["real_imu"]:
+                cmd.append("--real-imu")
+
+            log_path = out_dir / "acquisition.log"
+            log_file = open(log_path, "w", buffering=1)
+            kwargs = {
+                "cwd": str(PROJECT_ROOT),
+                "stdout": log_file,
+                "stderr": subprocess.STDOUT,
+            }
+            # Detach the recording so it survives a web-server crash.
+            if os.name == "posix":
+                kwargs["start_new_session"] = True
+            else:
+                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+            self.proc = subprocess.Popen(cmd, **kwargs)
+
+            self.state = {
+                "pid": self.proc.pid,
+                "output_dir": str(out_dir),
+                "output_name": out_name,
+                "log_path": str(log_path),
+                "params": params,
+                "started_at": _utcnow_iso(),
+            }
+            self._save_state()
+            return dict(self.state)
+
+    def stop(self) -> bool:
+        """SIGINT the recording so its logger.finalize() runs."""
+        with self.lock:
+            if not self.is_running():
+                return False
+            pid = self.state["pid"] if self.state else self.proc.pid
+            try:
+                if os.name == "posix":
+                    os.kill(pid, signal.SIGINT)
+                else:
+                    os.kill(pid, signal.CTRL_BREAK_EVENT)
+            except (ProcessLookupError, OSError):
+                return False
+            if self.proc is not None:
+                try:
+                    self.proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self.proc.terminate()
+            return True
+
+    def status(self) -> Dict:
+        with self.lock:
+            running = self.is_running()
+            out: Dict = {
+                "running": running,
+                "state": self.state,
+                "log_tail": [],
+                "progress": None,
+            }
+            if self.state:
+                tail, progress = self._read_log_tail(Path(self.state["log_path"]))
+                out["log_tail"] = tail
+                out["progress"] = progress
+            if not running and self.proc is not None and self.state is not None:
+                out["exit_code"] = self.proc.returncode
+                # Clear state once the process has fully exited so a new
+                # recording can start cleanly.
+                self.state = None
+                self.proc = None
+                self._save_state()
+            return out
+
+    @staticmethod
+    def _read_log_tail(log_path: Path):
+        if not log_path.is_file():
+            return [], None
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                lines = f.readlines()
+        except OSError:
+            return [], None
+        tail = [line.rstrip("\n") for line in lines[-_LOG_TAIL_LINES:]]
+        progress = None
+        for line in reversed(lines):
+            m = _PROGRESS_RE.search(line)
+            if m:
+                progress = {
+                    "elapsed_s": float(m.group(1)),
+                    "frames": int(m.group(2)),
+                    "records": int(m.group(3)),
+                }
+                break
+        return tail, progress
+
+
 def create_app(data_dir: Path) -> Flask:
     data_dir = Path(data_dir).resolve()
     if not data_dir.is_dir():
@@ -45,9 +297,10 @@ def create_app(data_dir: Path) -> Flask:
     static_dir = Path(__file__).parent / "static"
     app = Flask(__name__, static_folder=str(static_dir), static_url_path="/static")
     app.config["DATA_DIR"] = data_dir
+    recorder = RecordingManager(data_dir)
+    app.config["RECORDER"] = recorder
 
     def _resolve_run(run: str) -> Path:
-        """Look up a run directory, refusing path-traversal attempts."""
         if "/" in run or "\\" in run or run.startswith("."):
             abort(400, "invalid run name")
         run_dir = (data_dir / run).resolve()
@@ -98,7 +351,6 @@ def create_app(data_dir: Path) -> Flask:
             stride = max(1, int(request.args.get("stride", 1)))
         except ValueError:
             stride = 1
-
         rows = []
         with open(csv_path, newline="") as f:
             reader = csv.DictReader(f)
@@ -111,38 +363,51 @@ def create_app(data_dir: Path) -> Flask:
     @app.route("/api/runs/<run>/images/<path:filename>")
     def serve_image(run: str, filename: str):
         run_dir = _resolve_run(run)
-        # send_from_directory handles path-traversal rejection for us.
         return send_from_directory(str(run_dir / "images"), filename)
 
+    @app.route("/api/recording/status")
+    def recording_status():
+        return jsonify(recorder.status())
+
+    @app.route("/api/recording/start", methods=["POST"])
+    def recording_start():
+        body = request.get_json(silent=True) or {}
+        try:
+            state = recorder.start(body)
+        except ValueError as e:
+            abort(400, str(e))
+        except RuntimeError as e:
+            abort(409, str(e))
+        return jsonify({"ok": True, "state": state})
+
+    @app.route("/api/recording/stop", methods=["POST"])
+    def recording_stop():
+        ok = recorder.stop()
+        if not ok:
+            abort(409, "no recording is running")
+        return jsonify({"ok": True})
+
     @app.errorhandler(404)
-    def not_found(err):
+    def _not_found(err):
         return jsonify({"error": "not found", "detail": str(err.description)}), 404
 
     @app.errorhandler(400)
-    def bad_request(err):
+    def _bad_request(err):
         return jsonify({"error": "bad request", "detail": str(err.description)}), 400
+
+    @app.errorhandler(409)
+    def _conflict(err):
+        return jsonify({"error": "conflict", "detail": str(err.description)}), 409
 
     return app
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Local web viewer for recorded datasets.")
-    parser.add_argument(
-        "--data-dir", "-d", default="./data", type=Path,
-        help="Root directory containing recorded run subdirectories",
-    )
-    parser.add_argument(
-        "--host", default="0.0.0.0",
-        help="Address to bind (default 0.0.0.0 = all interfaces)",
-    )
-    parser.add_argument(
-        "--port", "-p", default=5000, type=int,
-        help="Port to listen on (default 5000)",
-    )
-    parser.add_argument(
-        "--debug", action="store_true",
-        help="Enable Flask debug mode (auto-reload on code changes)",
-    )
+    parser = argparse.ArgumentParser(description="Local web viewer + control panel.")
+    parser.add_argument("--data-dir", "-d", default="./data", type=Path)
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", "-p", default=5000, type=int)
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
     app = create_app(args.data_dir)

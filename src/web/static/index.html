@@ -22,6 +22,75 @@
   </header>
 
   <main>
+    <section class="panel record-panel" id="record-panel">
+      <h2>Record</h2>
+
+      <div id="record-form" class="record-form">
+        <div class="record-grid">
+          <label class="record-field">
+            <span>Sensors</span>
+            <div class="checkbox-row">
+              <label><input type="checkbox" id="opt-real-camera" checked /> Real camera</label>
+              <label><input type="checkbox" id="opt-real-gps" checked /> Real GPS</label>
+              <label><input type="checkbox" id="opt-enable-imu" checked /> Enable IMU</label>
+              <label><input type="checkbox" id="opt-real-imu" checked /> Real IMU</label>
+            </div>
+          </label>
+
+          <label class="record-field">
+            <span>FPS: <output id="opt-fps-out">15</output></span>
+            <input type="range" id="opt-fps" min="1" max="60" step="1" value="15" />
+          </label>
+
+          <label class="record-field">
+            <span>Duration (seconds, 0 = unlimited)</span>
+            <div class="duration-row">
+              <input type="number" id="opt-duration" min="0" max="86400" step="1" value="60" />
+              <button type="button" class="dur-preset" data-secs="30">30 s</button>
+              <button type="button" class="dur-preset" data-secs="300">5 min</button>
+              <button type="button" class="dur-preset" data-secs="1800">30 min</button>
+            </div>
+          </label>
+
+          <label class="record-field">
+            <span>Output name (auto if blank)</span>
+            <input type="text" id="opt-output-name" placeholder="e.g. ride_park_loop"
+                   pattern="[A-Za-z0-9._\-]+" maxlength="80" />
+          </label>
+        </div>
+
+        <div class="record-buttons">
+          <button id="start-btn" type="button">● Start Recording</button>
+        </div>
+      </div>
+
+      <div id="record-live" class="record-live" hidden>
+        <div class="live-header">
+          <span class="live-dot"></span>
+          <span class="live-label">Recording</span>
+          <span id="live-name" class="muted"></span>
+        </div>
+        <div class="live-stats">
+          <div><span class="stat-label">Elapsed</span><span id="live-elapsed">—</span></div>
+          <div><span class="stat-label">Frames</span><span id="live-frames">—</span></div>
+          <div><span class="stat-label">Records</span><span id="live-records">—</span></div>
+          <div><span class="stat-label">Target FPS</span><span id="live-target-fps">—</span></div>
+        </div>
+        <div class="live-progress">
+          <div class="bar"><div id="live-bar" class="bar-fill"></div></div>
+        </div>
+        <details class="live-log">
+          <summary>Log tail</summary>
+          <pre id="live-log-block"></pre>
+        </details>
+        <div class="record-buttons">
+          <button id="stop-btn" type="button" class="stop">■ Stop Recording</button>
+        </div>
+      </div>
+
+      <p id="record-error" class="error muted" hidden></p>
+    </section>
+
     <section class="row">
       <div class="panel image-panel">
         <h2>Frame</h2>

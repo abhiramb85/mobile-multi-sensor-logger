@@ -293,6 +293,162 @@ function stopPlay() {
   state.rafId = null;
 }
 
+// ---- Recording control ----
+
+const recordForm = document.getElementById("record-form");
+const recordLive = document.getElementById("record-live");
+const startBtn = document.getElementById("start-btn");
+const stopBtn = document.getElementById("stop-btn");
+const recordError = document.getElementById("record-error");
+const liveName = document.getElementById("live-name");
+const liveElapsed = document.getElementById("live-elapsed");
+const liveFrames = document.getElementById("live-frames");
+const liveRecords = document.getElementById("live-records");
+const liveTargetFps = document.getElementById("live-target-fps");
+const liveBar = document.getElementById("live-bar");
+const liveLogBlock = document.getElementById("live-log-block");
+const fpsSlider = document.getElementById("opt-fps");
+const fpsOut = document.getElementById("opt-fps-out");
+
+let pollHandle = null;
+
+fpsSlider.addEventListener("input", () => { fpsOut.textContent = fpsSlider.value; });
+
+document.querySelectorAll(".dur-preset").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.getElementById("opt-duration").value = b.dataset.secs;
+  });
+});
+
+function showError(msg) {
+  recordError.textContent = msg || "";
+  recordError.hidden = !msg;
+}
+
+function collectOpts() {
+  return {
+    real_camera: document.getElementById("opt-real-camera").checked,
+    real_gps:    document.getElementById("opt-real-gps").checked,
+    enable_imu:  document.getElementById("opt-enable-imu").checked,
+    real_imu:    document.getElementById("opt-real-imu").checked,
+    fps:         Number(fpsSlider.value),
+    duration:    Number(document.getElementById("opt-duration").value),
+    output_name: document.getElementById("opt-output-name").value.trim(),
+  };
+}
+
+function formatElapsed(secs) {
+  secs = Math.max(0, Math.round(secs));
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function renderStatus(s) {
+  if (s.running && s.state) {
+    recordForm.hidden = true;
+    recordLive.hidden = false;
+    liveName.textContent = s.state.output_name || "";
+    const params = s.state.params || {};
+    liveTargetFps.textContent = params.fps ?? "—";
+
+    const elapsed = s.progress?.elapsed_s ?? 0;
+    const frames  = s.progress?.frames    ?? 0;
+    const records = s.progress?.records   ?? 0;
+    liveElapsed.textContent = formatElapsed(elapsed);
+    liveFrames.textContent  = frames.toLocaleString();
+    liveRecords.textContent = records.toLocaleString();
+
+    const duration = params.duration || 0;
+    if (duration > 0) {
+      const pct = Math.min(100, (elapsed / duration) * 100);
+      liveBar.style.width = `${pct}%`;
+    } else {
+      liveBar.style.width = "0%";
+    }
+
+    liveLogBlock.textContent = (s.log_tail || []).join("\n");
+  } else {
+    recordForm.hidden = false;
+    recordLive.hidden = true;
+  }
+}
+
+async function pollStatus() {
+  try {
+    const resp = await fetch("/api/recording/status");
+    const s = await resp.json();
+    renderStatus(s);
+    if (!s.running && pollHandle) {
+      clearInterval(pollHandle);
+      pollHandle = null;
+      // Recording just finished — refresh the run dropdown so the new dataset shows up.
+      const list = await fetch("/api/runs").then(r => r.json());
+      runSelect.innerHTML = "";
+      for (const r of list.runs) {
+        const opt = document.createElement("option");
+        opt.value = r.name;
+        opt.textContent = `${r.name} (${formatSize(r.size_bytes)})`;
+        runSelect.appendChild(opt);
+      }
+      // Auto-select the most recently finished recording if there is one.
+      if (list.runs.length) {
+        runSelect.value = list.runs[list.runs.length - 1].name;
+        loadRun(runSelect.value);
+      }
+    }
+  } catch (e) {
+    console.error("status poll failed", e);
+  }
+}
+
+function startPolling() {
+  if (pollHandle) return;
+  pollStatus();
+  pollHandle = setInterval(pollStatus, 1000);
+}
+
+startBtn.addEventListener("click", async () => {
+  showError(null);
+  const opts = collectOpts();
+  try {
+    const resp = await fetch("/api/recording/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showError(err.detail || `failed: HTTP ${resp.status}`);
+      return;
+    }
+    startPolling();
+  } catch (e) {
+    showError(`network error: ${e.message}`);
+  }
+});
+
+stopBtn.addEventListener("click", async () => {
+  showError(null);
+  stopBtn.disabled = true;
+  try {
+    const resp = await fetch("/api/recording/stop", { method: "POST" });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showError(err.detail || `failed: HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    showError(`network error: ${e.message}`);
+  } finally {
+    setTimeout(() => { stopBtn.disabled = false; }, 1500);
+  }
+});
+
+// Re-attach to a recording if one was already running when the page loaded.
+pollStatus().then(() => {
+  if (recordLive && !recordLive.hidden) startPolling();
+});
+
 init().catch((e) => {
   console.error(e);
   metadataBlock.textContent = `init error: ${e.message}`;

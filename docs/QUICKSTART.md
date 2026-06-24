@@ -63,11 +63,13 @@ python -m src.tools.replay \
   --telemetry
 ```
 
-Or browser-based viewer (works over SSH, phone-friendly):
+Or browser-based viewer + recording controls (works over SSH, phone-friendly):
 ```bash
 python -m src.web.server --data-dir ./data
 # Open http://<pi-ip>:5000 from any device on the network
 ```
+
+The web UI now includes a **Record panel** at the top: toggle sensors, set FPS and duration, hit Start. Live frame count and elapsed time update every second. Hit Stop to finalize the dataset cleanly. The new recording appears in the dropdown for immediate review.
 
 ## Hardware Quick Setup
 

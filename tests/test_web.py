@@ -106,6 +106,61 @@ class WebApiTests(unittest.TestCase):
         resp = self.client.get("/api/runs/..%2F..%2Fetc/metadata")
         self.assertIn(resp.status_code, (400, 404))
 
+    def test_recording_status_idle_when_nothing_running(self):
+        resp = self.client.get("/api/recording/status")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        self.assertFalse(payload["running"])
+        self.assertIsNone(payload["state"])
+
+    def test_recording_start_rejects_bad_fps(self):
+        resp = self.client.post("/api/recording/start", json={"fps": 9999})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_recording_start_rejects_bad_output_name(self):
+        resp = self.client.post("/api/recording/start", json={"output_name": "../etc/passwd"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_recording_stop_when_idle_returns_409(self):
+        resp = self.client.post("/api/recording/stop")
+        self.assertEqual(resp.status_code, 409)
+
+
+class RecordingManagerValidationTests(unittest.TestCase):
+    """Cover the input-validation helper without spawning real subprocesses."""
+
+    def test_validate_opts_defaults(self):
+        from src.web.server import _validate_opts
+        out = _validate_opts({})
+        self.assertEqual(out["fps"], 30)
+        self.assertEqual(out["duration"], 60)
+        self.assertFalse(out["real_camera"])
+        self.assertFalse(out["enable_imu"])
+
+    def test_validate_opts_real_imu_implies_enable_imu(self):
+        from src.web.server import _validate_opts
+        out = _validate_opts({"real_imu": True})
+        self.assertTrue(out["enable_imu"])
+        self.assertTrue(out["real_imu"])
+
+    def test_validate_opts_rejects_out_of_range_fps(self):
+        from src.web.server import _validate_opts
+        with self.assertRaises(ValueError):
+            _validate_opts({"fps": 0})
+        with self.assertRaises(ValueError):
+            _validate_opts({"fps": 200})
+
+    def test_sanitize_name_autogenerates(self):
+        from src.web.server import _sanitize_name
+        name = _sanitize_name("")
+        self.assertTrue(name.startswith("ride_"))
+
+    def test_sanitize_name_rejects_path_chars(self):
+        from src.web.server import _sanitize_name
+        for bad in ["../etc", "foo bar", "foo/bar", "foo\\bar"]:
+            with self.assertRaises(ValueError):
+                _sanitize_name(bad)
+
 
 if __name__ == "__main__":
     unittest.main()
