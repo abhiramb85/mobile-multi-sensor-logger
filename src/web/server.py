@@ -305,6 +305,21 @@ def create_app(data_dir: Path) -> Flask:
     static_dir = Path(__file__).parent / "static"
     app = Flask(__name__, static_folder=str(static_dir), static_url_path="/static")
     app.config["DATA_DIR"] = data_dir
+    # Disable browser caching of the SPA + static assets. This is a local dev
+    # tool, not a public site; the cost of always re-fetching ~150 KB of JS/CSS
+    # is negligible, but the cost of users debugging stale-cache bugs after a
+    # `git pull` (play button silently bound to the previous app.js, etc.) is
+    # very high. Tradeoff is firmly on the side of "no cache".
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+    @app.after_request
+    def _no_cache_for_static(resp):
+        if request.path.startswith("/static/") or request.path == "/":
+            resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+        return resp
+
     recorder = RecordingManager(data_dir)
     app.config["RECORDER"] = recorder
 
