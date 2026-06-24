@@ -1,6 +1,10 @@
 "use strict";
 
 // Multi-sensor dataset viewer — vanilla JS, single page.
+// Build marker: bumped each commit so users can verify their browser
+// loaded the latest JS by checking the console message below.
+const VIEWER_BUILD = "2026-06-24-diag";
+console.log(`[viewer] app.js loaded — build ${VIEWER_BUILD}`);
 
 const runSelect = document.getElementById("run-select");
 const runStats = document.getElementById("run-stats");
@@ -75,6 +79,7 @@ function formatLocalTime(value) {
 // ---- Initialisation ----
 
 async function init() {
+  console.log("[viewer] init() starting");
   initMap();
   initCharts();
 
@@ -85,6 +90,7 @@ async function init() {
   runSelect.addEventListener("change", () => loadRun(runSelect.value));
   scrubber.addEventListener("input", onScrub);
   playBtn.addEventListener("click", togglePlay);
+  console.log("[viewer] play/scrubber/runSelect handlers bound");
 
   const res = await fetch("/api/runs");
   const { runs } = await res.json();
@@ -285,12 +291,17 @@ function onScrub() {
 }
 
 function togglePlay() {
+  console.log(`[viewer] play click — rows=${state.rows.length}, playing=${state.playing}, fps=${state.fps}, run=${state.run}`);
   if (state.playing) stopPlay();
   else startPlay();
 }
 
 function startPlay() {
-  if (!state.rows.length) return;
+  if (!state.rows.length) {
+    console.warn("[viewer] startPlay: no rows loaded — nothing to play");
+    return;
+  }
+  console.log(`[viewer] startPlay: ${state.rows.length} frames at ${state.fps} fps`);
   state.playing = true;
   playBtn.textContent = "❚❚ Pause";
   state.lastFrameAt = performance.now();
