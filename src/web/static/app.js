@@ -3,7 +3,7 @@
 // Multi-sensor dataset viewer — vanilla JS, single page.
 // Build marker: bumped each commit so users can verify their browser
 // loaded the latest JS by checking the console message below.
-const VIEWER_BUILD = "2026-06-24-playback";
+const VIEWER_BUILD = "2026-06-24-display-cap";
 console.log(`[viewer] app.js loaded — build ${VIEWER_BUILD}`);
 
 const runSelect = document.getElementById("run-select");
@@ -160,7 +160,7 @@ function initCharts() {
 // ---- Data loading ----
 
 async function loadRun(runName) {
-  stopPlay();
+  stopPlay("loadRun");
   state.run = runName;
   state.rows = [];
   state.idx = 0;
@@ -296,59 +296,80 @@ function fmt(v) {
 }
 
 function onScrub() {
-  stopPlay();
+  stopPlay("scrub");
   applyIndex(Number(scrubber.value));
 }
 
 function togglePlay() {
   console.log(`[viewer] play click — rows=${state.rows.length}, playing=${state.playing}, fps=${state.fps}, run=${state.run}`);
-  if (state.playing) stopPlay();
+  if (state.playing) stopPlay("user-pause");
   else startPlay();
 }
+
+// Browser can't fetch JPEGs over Wi-Fi faster than ~30 Hz without piling up
+// canceled requests. We advance state.idx at the true source × speed rate
+// (for correct wall-clock playback) but only repaint at most every
+// DISPLAY_PERIOD_MS, which keeps the image element actually showing what
+// the index says it should.
+const DISPLAY_PERIOD_MS = 33;
+let _playTickCount = 0;
 
 function startPlay() {
   if (!state.rows.length) {
     console.warn("[viewer] startPlay: no rows loaded — nothing to play");
     return;
   }
-  console.log(`[viewer] startPlay: ${state.rows.length} frames @ ${state.fps} fps, speed=${speedSelect?.value || 1}×`);
+  console.log(`[viewer] startPlay: ${state.rows.length} frames @ ${state.fps} fps, speed=${speedSelect?.value || 1}×, displayCap=${DISPLAY_PERIOD_MS}ms`);
   state.playing = true;
+  _playTickCount = 0;
   playBtn.textContent = "❚❚ Pause";
   state.lastFrameAt = performance.now();
+  state.lastDisplayAt = state.lastFrameAt;
 
-  // Multi-frame-per-tick playback loop:
-  //  - period is recomputed each tick from current speed-select value, so
-  //    speed changes apply immediately (not just on next Play press).
-  //  - When the wall clock has advanced enough for N frames, we advance N
-  //    in one applyIndex call. Important when speed × source_fps exceeds
-  //    the browser's RAF rate (~60 Hz) — without this, max effective
-  //    playback was capped at 60 Hz regardless of speed multiplier.
-  //  - On reaching the end, stopPlay() restores the Play button, then
-  //    applyIndex(0) resets the playhead to the first frame so the user
-  //    can immediately re-play (user requested this behaviour).
   const tick = (now) => {
-    if (!state.playing) return;
-    const speed = Number(speedSelect?.value) || 1;
-    const sourceFps = Math.max(1, state.fps);
-    const period = 1000 / (sourceFps * speed);
-    const elapsed = now - state.lastFrameAt;
-    if (elapsed >= period) {
-      const framesToAdvance = Math.max(1, Math.floor(elapsed / period));
-      const next = state.idx + framesToAdvance;
-      if (next >= state.rows.length) {
-        stopPlay();
-        applyIndex(0);
-        return;
+    if (!state.playing) {
+      console.log(`[viewer] tick: playing=false after ${_playTickCount} ticks, exiting`);
+      return;
+    }
+    _playTickCount++;
+    try {
+      const speed = Number(speedSelect?.value) || 1;
+      const sourceFps = Math.max(1, state.fps);
+      // True per-source-frame period — what the recording timing actually is.
+      const truePeriod = 1000 / (sourceFps * speed);
+      const elapsedTrue = now - state.lastFrameAt;
+      const elapsedDisplay = now - state.lastDisplayAt;
+      // Only repaint if both:
+      //   - enough wall-clock time has passed for >=1 source frame, AND
+      //   - we haven't repainted within DISPLAY_PERIOD_MS (browser pacing).
+      if (elapsedTrue >= truePeriod && elapsedDisplay >= DISPLAY_PERIOD_MS) {
+        const framesToAdvance = Math.max(1, Math.floor(elapsedTrue / truePeriod));
+        const next = state.idx + framesToAdvance;
+        if (next >= state.rows.length) {
+          console.log(`[viewer] tick: reached end at idx=${state.idx}, looping to 0`);
+          stopPlay("reached-end");
+          applyIndex(0);
+          return;
+        }
+        applyIndex(next);
+        state.lastFrameAt += framesToAdvance * truePeriod;
+        state.lastDisplayAt = now;
+        if (_playTickCount === 1 || _playTickCount % 30 === 0) {
+          console.log(`[viewer] tick #${_playTickCount}: idx=${state.idx}/${state.rows.length} (advance=${framesToAdvance}, speed=${speed}×)`);
+        }
       }
-      applyIndex(next);
-      state.lastFrameAt += framesToAdvance * period;
+    } catch (e) {
+      console.error("[viewer] tick error:", e);
     }
     state.rafId = requestAnimationFrame(tick);
   };
   state.rafId = requestAnimationFrame(tick);
 }
 
-function stopPlay() {
+function stopPlay(reason) {
+  if (state.playing) {
+    console.log(`[viewer] stopPlay: reason=${reason || "(unspecified)"}, idx=${state.idx}`);
+  }
   state.playing = false;
   playBtn.textContent = "▶ Play";
   if (state.rafId) cancelAnimationFrame(state.rafId);
