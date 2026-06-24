@@ -76,6 +76,99 @@ def _sanitize_name(name: Optional[str]) -> str:
     return name
 
 
+def _generate_playback_mp4(run_dir: Path, mp4_path: Path) -> None:
+    """Stitch a run's JPEG frames into a maximally-compatible H.264 MP4.
+
+    Uses ffmpeg's concat demuxer with libx264 + yuv420p so the result plays
+    in Windows Media Player, VLC, Chrome <video>, mobile players, etc.
+    cv2.VideoWriter mp4v was producing files that some Windows players
+    rejected with codec error 0xC00D36C4.
+    """
+    import shutil
+
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            "ffmpeg is required for MP4 export but not installed; "
+            "run `sudo apt install ffmpeg` on the Pi"
+        )
+
+    csv_path = run_dir / "data.csv"
+    images_dir = run_dir / "images"
+    if not csv_path.is_file():
+        raise FileNotFoundError(f"missing data.csv in {run_dir}")
+    if not images_dir.is_dir():
+        raise FileNotFoundError(f"missing images/ in {run_dir}")
+
+    with open(csv_path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise FileNotFoundError("data.csv has no rows")
+
+    # FPS preference order: metadata.json -> inferred from timestamps -> 30.
+    fps = 30.0
+    metadata_path = run_dir / "metadata.json"
+    if metadata_path.is_file():
+        try:
+            with open(metadata_path) as f:
+                md = json.load(f)
+            cam_fps = (md.get("sensor_configuration") or {}).get("camera", {}).get("fps")
+            if isinstance(cam_fps, (int, float)) and cam_fps > 0:
+                fps = float(cam_fps)
+        except Exception:
+            pass
+
+    duration = 1.0 / fps
+    list_path = run_dir / "_ffmpeg_list.txt"
+    last_path: Optional[str] = None
+    n_frames = 0
+    try:
+        with open(list_path, "w") as f:
+            for row in rows:
+                image_name = Path(row.get("image_path", "")).name
+                if not image_name:
+                    continue
+                full_path = (images_dir / image_name).resolve()
+                if not full_path.is_file():
+                    continue
+                # ffmpeg concat lines wrap paths in single quotes; escape any
+                # apostrophes inside the path itself with the close-quote /
+                # backslash-apostrophe / open-quote trick.
+                escaped = str(full_path).replace("'", "'\\''")
+                f.write(f"file '{escaped}'\n")
+                f.write(f"duration {duration:.6f}\n")
+                last_path = escaped
+                n_frames += 1
+            # The concat demuxer requires the final input listed twice,
+            # with the duration omitted on the trailing copy.
+            if last_path is not None:
+                f.write(f"file '{last_path}'\n")
+
+        if n_frames == 0:
+            raise FileNotFoundError("no readable JPEG frames found in the run")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-loglevel", "error",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(list_path),
+            "-c:v", "libx264",
+            "-r", f"{fps:.6f}",
+            "-pix_fmt", "yuv420p",   # required for Windows Media Player
+            "-movflags", "+faststart",  # moov atom up front for streaming
+            str(mp4_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            tail = (result.stderr or "").strip().splitlines()[-5:]
+            raise RuntimeError("ffmpeg failed: " + " | ".join(tail))
+    finally:
+        try:
+            list_path.unlink()
+        except OSError:
+            pass
+
+
 def _pid_alive(pid: Optional[int]) -> bool:
     if not pid:
         return False
@@ -393,24 +486,23 @@ def create_app(data_dir: Path) -> Flask:
 
     @app.route("/api/runs/<run>/playback.mp4")
     def playback_video(run: str):
-        """Generate (if missing) and serve an MP4 stitched from the run's JPEGs.
+        """Generate (if missing) and serve an H.264 MP4 stitched from the JPEGs.
 
-        First call for a given run triggers cv2.VideoWriter — can take 15-60s
-        for a 7000-frame recording. The result is cached as <run>/playback.mp4
-        so every subsequent click is an instant download.
+        Uses ffmpeg + libx264 (not cv2.VideoWriter) because cv2's `mp4v`
+        fourcc produces MPEG-4 Part 2 which Windows Media Player refuses
+        (0xC00D36C4). H.264 + yuv420p plays in every major player.
+
+        First call for a given run blocks while ffmpeg encodes — about
+        15-30s for a 7000-frame recording at 60 fps on a Pi 5. The result
+        is cached as <run>/playback.mp4 so every subsequent click is an
+        instant download.
         """
         run_dir = _resolve_run(run)
         mp4_path = run_dir / "playback.mp4"
 
         if not mp4_path.is_file():
-            # Reuse the export logic from the CLI replay tool — same code
-            # path that powers `python -m src.tools.replay --export-video`,
-            # so the on-frame overlay (timestamp, GPS, accel, gyro) is
-            # baked in.
             try:
-                from src.tools.replay import DatasetReplayer
-                replayer = DatasetReplayer(run_dir)
-                replayer.export_video(str(mp4_path))
+                _generate_playback_mp4(run_dir, mp4_path)
             except FileNotFoundError as e:
                 abort(404, str(e))
             except Exception as e:
