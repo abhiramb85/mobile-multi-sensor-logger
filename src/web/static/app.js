@@ -3,7 +3,7 @@
 // Multi-sensor dataset viewer — vanilla JS, single page.
 // Build marker: bumped each commit so users can verify their browser
 // loaded the latest JS by checking the console message below.
-const VIEWER_BUILD = "2026-06-24-speed";
+const VIEWER_BUILD = "2026-06-24-rows";
 console.log(`[viewer] app.js loaded — build ${VIEWER_BUILD}`);
 
 const runSelect = document.getElementById("run-select");
@@ -175,15 +175,15 @@ async function loadRun(runName) {
     metadataBlock.textContent = "(no metadata)";
   }
 
-  // CSV rows (sub-sample very large datasets to keep the UI responsive)
-  const probe = await fetch(`/api/runs/${encodeURIComponent(runName)}/data?stride=1000`).then(r => r.json());
-  const stride = probe.count > 5000 ? Math.ceil(probe.count / 5000) : 1;
-  const data = stride === 1
-    ? probe
-    : await fetch(`/api/runs/${encodeURIComponent(runName)}/data?stride=${stride}`).then(r => r.json());
+  // Fetch every row of the dataset. We need them all for the scrubber + frame
+  // playback. Sub-sampling for chart performance happens client-side in
+  // fillCharts() — the per-frame index has to be unbroken or the scrubber
+  // skips frames.
+  const data = await fetch(`/api/runs/${encodeURIComponent(runName)}/data`).then(r => r.json());
 
   state.rows = data.rows;
-  runStats.textContent = `${data.count} rows (stride ${data.stride}) — ~${state.fps.toFixed(1)} fps`;
+  runStats.textContent = `${data.count} rows — ~${state.fps.toFixed(1)} fps`;
+  console.log(`[viewer] loadRun ${runName}: ${data.count} rows loaded`);
   scrubber.max = String(Math.max(0, state.rows.length - 1));
   scrubber.value = "0";
 
@@ -214,9 +214,18 @@ function drawTrack() {
 }
 
 function fillCharts() {
-  const t0 = parseTimestamp(state.rows[0]?.timestamp) ?? 0;
-  const xs = state.rows.map(r => (parseTimestamp(r.timestamp) ?? t0) - t0);
-  const series = (key) => state.rows.map((r, i) => ({ x: xs[i], y: parseFloatSafe(r[key]) }));
+  // Sub-sample for charts only — playback still uses the full state.rows.
+  // Chart.js stays snappy at <= ~5000 points; above that it gets sluggish on
+  // weaker devices.
+  const CHART_CAP = 5000;
+  const chartStride = Math.max(1, Math.ceil(state.rows.length / CHART_CAP));
+  const sampled = chartStride === 1
+    ? state.rows
+    : state.rows.filter((_, i) => i % chartStride === 0);
+
+  const t0 = parseTimestamp(sampled[0]?.timestamp) ?? 0;
+  const xs = sampled.map(r => (parseTimestamp(r.timestamp) ?? t0) - t0);
+  const series = (key) => sampled.map((r, i) => ({ x: xs[i], y: parseFloatSafe(r[key]) }));
 
   state.accelChart.data.datasets[0].data = series("ax");
   state.accelChart.data.datasets[1].data = series("ay");
@@ -303,10 +312,11 @@ function startPlay() {
     return;
   }
   const speed = Number(speedSelect?.value) || 1;
-  // Effective per-frame interval. At 1× speed and 60 fps, that's 16 ms — too
-  // fast to actually see on short recordings. Floor at 50 ms so even a tiny
-  // 8-frame test plays back over ~400 ms instead of vanishing in 130 ms.
-  const period = Math.max(50, 1000 / Math.max(1, state.fps * speed));
+  // Effective per-frame interval. Floor at 10 ms (~100 fps display max) so
+  // pathological speed × fps combinations don't lock the loop, but otherwise
+  // honour what the user asked for — a 30-min recording at 8× plays in ~4 min
+  // as expected.
+  const period = Math.max(10, 1000 / Math.max(1, state.fps * speed));
   const totalSec = (state.rows.length * period) / 1000;
   console.log(`[viewer] startPlay: ${state.rows.length} frames @ ${state.fps} fps, speed=${speed}×, period=${period.toFixed(1)} ms (≈${totalSec.toFixed(1)}s playback)`);
   state.playing = true;
