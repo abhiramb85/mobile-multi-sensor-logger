@@ -18,9 +18,6 @@ class CameraDriver(SensorDriver):
         codec: str = "MJPEG",
         jpeg_quality: int = 90,
         use_mock: bool = True,
-        autofocus: Optional[bool] = None,
-        focus: Optional[int] = None,
-        sharpness: Optional[int] = None,
     ):
         super().__init__()
         self.device_id = device_id
@@ -29,11 +26,6 @@ class CameraDriver(SensorDriver):
         self.codec = codec
         self.jpeg_quality = int(jpeg_quality)
         self.use_mock = use_mock
-        # V4L2 lens / image-quality knobs. None = don't override the camera's
-        # current value; an int/bool = apply it after the cv2.VideoCapture open.
-        self.autofocus = autofocus
-        self.focus = focus
-        self.sharpness = sharpness
         self.frame_count = 0
         self._cap = None  # cv2.VideoCapture, set in start()
         self._mock_period = 1.0 / max(1, int(fps))  # used to pace mock get_frame()
@@ -62,27 +54,13 @@ class CameraDriver(SensorDriver):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
         cap.set(cv2.CAP_PROP_FPS, self.fps)
 
-        # Apply optional V4L2 lens / image controls. Order matters: turn
-        # autofocus off *before* setting a manual focus value, otherwise the
-        # camera ignores the focus write.
-        if self.autofocus is not None:
-            cap.set(cv2.CAP_PROP_AUTOFOCUS, 1 if self.autofocus else 0)
-        if self.focus is not None:
-            cap.set(cv2.CAP_PROP_FOCUS, int(self.focus))
-        if self.sharpness is not None:
-            cap.set(cv2.CAP_PROP_SHARPNESS, int(self.sharpness))
-
         actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         actual_fps = cap.get(cv2.CAP_PROP_FPS)
-        actual_af = int(cap.get(cv2.CAP_PROP_AUTOFOCUS))
-        actual_focus = int(cap.get(cv2.CAP_PROP_FOCUS))
-        actual_sharp = int(cap.get(cv2.CAP_PROP_SHARPNESS))
         print(
             f"CameraDriver opened device {self.device_id}: "
             f"{actual_w}x{actual_h} @ {actual_fps:.1f} fps "
-            f"(requested {self.resolution[0]}x{self.resolution[1]} @ {self.fps}), "
-            f"autofocus={actual_af}, focus={actual_focus}, sharpness={actual_sharp}"
+            f"(requested {self.resolution[0]}x{self.resolution[1]} @ {self.fps})"
         )
 
         self._cap = cap

@@ -12,13 +12,6 @@ class CameraConfig:
     resolution_height: int = 720
     fps: int = 30
     codec: str = "MJPEG"
-    # V4L2 lens / image-quality controls applied after the camera is opened.
-    # None = leave the camera's current setting alone (don't override).
-    # For typical 12 MP USB cams: autofocus=False, focus=300-500, sharpness=5
-    # produces a sharp image at ~1 m subject distance.
-    autofocus: Optional[bool] = None      # True/False/None
-    focus: Optional[int] = None           # 0 (far) .. 1023 (close) on most UVC cams
-    sharpness: Optional[int] = None       # 0 .. 7 on most UVC cams
 
 
 @dataclass

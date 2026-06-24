@@ -59,9 +59,6 @@ class DataAcquisitionSystem:
                 fps=self.config.camera.fps,
                 codec=self.config.camera.codec,
                 use_mock=mock_camera,
-                autofocus=self.config.camera.autofocus,
-                focus=self.config.camera.focus,
-                sharpness=self.config.camera.sharpness,
             )
             if not self.camera.start():
                 print(f"Failed to start camera ({'mock' if mock_camera else 'real'})")
@@ -243,31 +240,6 @@ def main():
         help="Camera frames per second"
     )
     parser.add_argument(
-        "--focus",
-        type=int,
-        default=None,
-        help="Manual focus value (0=far, 1023=close on most UVC cameras). Implies --no-autofocus."
-    )
-    parser.add_argument(
-        "--sharpness",
-        type=int,
-        default=None,
-        help="Image sharpness (typical UVC range 0-7)"
-    )
-    parser.add_argument(
-        "--autofocus",
-        dest="autofocus",
-        action="store_true",
-        default=None,
-        help="Force autofocus on"
-    )
-    parser.add_argument(
-        "--no-autofocus",
-        dest="autofocus",
-        action="store_false",
-        help="Force autofocus off (recommended for moving platforms like bicycles)"
-    )
-    parser.add_argument(
         "--real-camera",
         action="store_true",
         help="Capture from a real USB camera via OpenCV (default: mock frames)"
@@ -285,20 +257,8 @@ def main():
     
     args = parser.parse_args()
     
-    # If the user passed --focus and not explicit autofocus, default AF off so
-    # the focus value actually takes effect.
-    autofocus = args.autofocus
-    if autofocus is None and args.focus is not None:
-        autofocus = False
-
     config = SystemConfig(
-        camera=CameraConfig(
-            device_id=args.camera_id,
-            fps=args.fps,
-            autofocus=autofocus,
-            focus=args.focus,
-            sharpness=args.sharpness,
-        ),
+        camera=CameraConfig(device_id=args.camera_id, fps=args.fps),
         gps=GPSConfig(port=args.gps_port),
         imu=IMUConfig(enabled=args.enable_imu),
         sync=SyncConfig()

@@ -3,7 +3,7 @@
 // Multi-sensor dataset viewer — vanilla JS, single page.
 // Build marker: bumped each commit so users can verify their browser
 // loaded the latest JS by checking the console message below.
-const VIEWER_BUILD = "2026-06-24-focus";
+const VIEWER_BUILD = "2026-06-24-playback";
 console.log(`[viewer] app.js loaded — build ${VIEWER_BUILD}`);
 
 const runSelect = document.getElementById("run-select");
@@ -311,27 +311,37 @@ function startPlay() {
     console.warn("[viewer] startPlay: no rows loaded — nothing to play");
     return;
   }
-  const speed = Number(speedSelect?.value) || 1;
-  // Effective per-frame interval. Floor at 10 ms (~100 fps display max) so
-  // pathological speed × fps combinations don't lock the loop, but otherwise
-  // honour what the user asked for — a 30-min recording at 8× plays in ~4 min
-  // as expected.
-  const period = Math.max(10, 1000 / Math.max(1, state.fps * speed));
-  const totalSec = (state.rows.length * period) / 1000;
-  console.log(`[viewer] startPlay: ${state.rows.length} frames @ ${state.fps} fps, speed=${speed}×, period=${period.toFixed(1)} ms (≈${totalSec.toFixed(1)}s playback)`);
+  console.log(`[viewer] startPlay: ${state.rows.length} frames @ ${state.fps} fps, speed=${speedSelect?.value || 1}×`);
   state.playing = true;
   playBtn.textContent = "❚❚ Pause";
   state.lastFrameAt = performance.now();
+
+  // Multi-frame-per-tick playback loop:
+  //  - period is recomputed each tick from current speed-select value, so
+  //    speed changes apply immediately (not just on next Play press).
+  //  - When the wall clock has advanced enough for N frames, we advance N
+  //    in one applyIndex call. Important when speed × source_fps exceeds
+  //    the browser's RAF rate (~60 Hz) — without this, max effective
+  //    playback was capped at 60 Hz regardless of speed multiplier.
+  //  - On reaching the end, stopPlay() restores the Play button, then
+  //    applyIndex(0) resets the playhead to the first frame so the user
+  //    can immediately re-play (user requested this behaviour).
   const tick = (now) => {
     if (!state.playing) return;
-    if (now - state.lastFrameAt >= period) {
-      const next = state.idx + 1;
+    const speed = Number(speedSelect?.value) || 1;
+    const sourceFps = Math.max(1, state.fps);
+    const period = 1000 / (sourceFps * speed);
+    const elapsed = now - state.lastFrameAt;
+    if (elapsed >= period) {
+      const framesToAdvance = Math.max(1, Math.floor(elapsed / period));
+      const next = state.idx + framesToAdvance;
       if (next >= state.rows.length) {
         stopPlay();
+        applyIndex(0);
         return;
       }
       applyIndex(next);
-      state.lastFrameAt = now;
+      state.lastFrameAt += framesToAdvance * period;
     }
     state.rafId = requestAnimationFrame(tick);
   };
@@ -382,17 +392,6 @@ function resetLiveBuffer() {
 
 fpsSlider.addEventListener("input", () => { fpsOut.textContent = fpsSlider.value; });
 
-const focusSlider = document.getElementById("opt-focus");
-const focusOut = document.getElementById("opt-focus-out");
-const sharpSlider = document.getElementById("opt-sharpness");
-const sharpOut = document.getElementById("opt-sharpness-out");
-focusSlider?.addEventListener("input", () => {
-  focusOut.textContent = focusSlider.value === "0" ? "(auto)" : focusSlider.value;
-});
-sharpSlider?.addEventListener("input", () => {
-  sharpOut.textContent = sharpSlider.value === "0" ? "(default)" : sharpSlider.value;
-});
-
 document.querySelectorAll(".dur-preset").forEach((b) => {
   b.addEventListener("click", () => {
     document.getElementById("opt-duration").value = b.dataset.secs;
@@ -405,8 +404,6 @@ function showError(msg) {
 }
 
 function collectOpts() {
-  const focus = Number(focusSlider?.value || 0);
-  const sharp = Number(sharpSlider?.value || 0);
   return {
     real_camera: document.getElementById("opt-real-camera").checked,
     real_gps:    document.getElementById("opt-real-gps").checked,
@@ -415,10 +412,6 @@ function collectOpts() {
     fps:         Number(fpsSlider.value),
     duration:    Number(document.getElementById("opt-duration").value),
     output_name: document.getElementById("opt-output-name").value.trim(),
-    // 0 means "leave the camera default" for both — sent as null so the
-    // backend doesn't touch CAP_PROP_FOCUS / CAP_PROP_SHARPNESS at all.
-    focus:       focus > 0 ? focus : null,
-    sharpness:   sharp > 0 ? sharp : null,
   };
 }
 

@@ -39,19 +39,8 @@
 
           <label class="record-field">
             <span>FPS: <output id="opt-fps-out">15</output></span>
-            <input type="range" id="opt-fps" min="1" max="60" step="1" value="15" />
-          </label>
-
-          <label class="record-field">
-            <span>Camera focus: <output id="opt-focus-out">(auto)</output></span>
-            <input type="range" id="opt-focus" min="0" max="1023" step="1" value="0" />
-            <small class="muted">Slide right of 0 to disable autofocus and lock a manual focus value. 0=far/infinity, 1023=close. ~300-500 is typical for ~1 m subjects.</small>
-          </label>
-
-          <label class="record-field">
-            <span>Sharpness: <output id="opt-sharpness-out">(default)</output></span>
-            <input type="range" id="opt-sharpness" min="0" max="7" step="1" value="0" />
-            <small class="muted">0 = camera default. Higher values boost JPEG sharpening (try 3-5).</small>
+            <input type="range" id="opt-fps" min="1" max="120" step="1" value="15" />
+            <small class="muted">Camera supports up to 120 fps at 1280×720 (MJPEG).</small>
           </label>
 
           <label class="record-field">
