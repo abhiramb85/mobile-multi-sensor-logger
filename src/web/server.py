@@ -79,10 +79,16 @@ def _sanitize_name(name: Optional[str]) -> str:
 def _generate_playback_mp4(run_dir: Path, mp4_path: Path) -> None:
     """Stitch a run's JPEG frames into a maximally-compatible H.264 MP4.
 
-    Uses ffmpeg's concat demuxer with libx264 + yuv420p so the result plays
-    in Windows Media Player, VLC, Chrome <video>, mobile players, etc.
-    cv2.VideoWriter mp4v was producing files that some Windows players
-    rejected with codec error 0xC00D36C4.
+    Uses ffmpeg's image2 demuxer with a glob pattern (not the concat demuxer
+    with per-frame duration directives — that pattern proved unreliable
+    with 7000+ entries, producing files that even VLC refused to play).
+    The image2 + glob approach reads every `frame_*.jpg` in the images
+    directory in alphabetical order, which equals chronological order
+    because the filenames embed a zero-padded Unix-ms timestamp.
+
+    Output: H.264 video stream + yuv420p chroma + +faststart MP4 container —
+    the most-compatible MP4 profile around. Plays in Windows Media Player,
+    VLC, Chrome <video>, mobile players, QuickTime.
     """
     import shutil
 
@@ -92,19 +98,16 @@ def _generate_playback_mp4(run_dir: Path, mp4_path: Path) -> None:
             "run `sudo apt install ffmpeg` on the Pi"
         )
 
-    csv_path = run_dir / "data.csv"
     images_dir = run_dir / "images"
-    if not csv_path.is_file():
-        raise FileNotFoundError(f"missing data.csv in {run_dir}")
     if not images_dir.is_dir():
         raise FileNotFoundError(f"missing images/ in {run_dir}")
 
-    with open(csv_path, newline="") as f:
-        rows = list(csv.DictReader(f))
-    if not rows:
-        raise FileNotFoundError("data.csv has no rows")
+    # Quick frame count so we fail fast if the dir is empty.
+    n_frames = sum(1 for _ in images_dir.glob("frame_*.jpg"))
+    if n_frames == 0:
+        raise FileNotFoundError("no frame_*.jpg files in images/")
 
-    # FPS preference order: metadata.json -> inferred from timestamps -> 30.
+    # FPS preference: metadata.json -> 30 fallback.
     fps = 30.0
     metadata_path = run_dir / "metadata.json"
     if metadata_path.is_file():
@@ -117,56 +120,35 @@ def _generate_playback_mp4(run_dir: Path, mp4_path: Path) -> None:
         except Exception:
             pass
 
-    duration = 1.0 / fps
-    list_path = run_dir / "_ffmpeg_list.txt"
-    last_path: Optional[str] = None
-    n_frames = 0
+    glob_pattern = str(images_dir / "frame_*.jpg")
+    cmd = [
+        "ffmpeg", "-y",
+        "-loglevel", "warning",  # show warnings so we catch silent issues
+        "-framerate", f"{fps:.6f}",
+        "-pattern_type", "glob",
+        "-i", glob_pattern,
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",      # required for Windows Media Player
+        "-movflags", "+faststart",  # moov atom at file start for streaming
+        str(mp4_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    if result.returncode != 0:
+        tail = (result.stderr or "").strip().splitlines()[-8:]
+        raise RuntimeError("ffmpeg failed: " + " | ".join(tail))
+
+    # Verify the output actually has bytes — ffmpeg occasionally exits 0
+    # with a near-empty file when something went sideways.
     try:
-        with open(list_path, "w") as f:
-            for row in rows:
-                image_name = Path(row.get("image_path", "")).name
-                if not image_name:
-                    continue
-                full_path = (images_dir / image_name).resolve()
-                if not full_path.is_file():
-                    continue
-                # ffmpeg concat lines wrap paths in single quotes; escape any
-                # apostrophes inside the path itself with the close-quote /
-                # backslash-apostrophe / open-quote trick.
-                escaped = str(full_path).replace("'", "'\\''")
-                f.write(f"file '{escaped}'\n")
-                f.write(f"duration {duration:.6f}\n")
-                last_path = escaped
-                n_frames += 1
-            # The concat demuxer requires the final input listed twice,
-            # with the duration omitted on the trailing copy.
-            if last_path is not None:
-                f.write(f"file '{last_path}'\n")
-
-        if n_frames == 0:
-            raise FileNotFoundError("no readable JPEG frames found in the run")
-
-        cmd = [
-            "ffmpeg", "-y",
-            "-loglevel", "error",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(list_path),
-            "-c:v", "libx264",
-            "-r", f"{fps:.6f}",
-            "-pix_fmt", "yuv420p",   # required for Windows Media Player
-            "-movflags", "+faststart",  # moov atom up front for streaming
-            str(mp4_path),
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            tail = (result.stderr or "").strip().splitlines()[-5:]
-            raise RuntimeError("ffmpeg failed: " + " | ".join(tail))
-    finally:
-        try:
-            list_path.unlink()
-        except OSError:
-            pass
+        size = mp4_path.stat().st_size
+    except OSError:
+        raise RuntimeError("ffmpeg succeeded but the output file is missing")
+    if size < 1024:
+        warnings = (result.stderr or "").strip().splitlines()[-6:]
+        raise RuntimeError(
+            f"ffmpeg produced a {size}-byte file (too small to be valid). "
+            f"Warnings: {' | '.join(warnings) or '(none)'}"
+        )
 
 
 def _pid_alive(pid: Optional[int]) -> bool:
