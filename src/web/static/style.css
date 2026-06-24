@@ -2,6 +2,12 @@
    use display:flex/grid which overrides it. This makes the attribute work. */
 [hidden] { display: none !important; }
 
+/* While a recording is in progress the scrubber + metadata panels have no
+   meaning (no completed dataset to review yet) — hide them so the page has
+   a single clear mode and the play/pause controls don't sit there orphaned. */
+body.recording .scrubber-panel,
+body.recording .metadata-panel { display: none !important; }
+
 :root {
   --bg: #0f1419;
   --panel: #1c2330;

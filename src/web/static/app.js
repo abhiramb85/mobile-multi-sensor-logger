@@ -317,6 +317,17 @@ let pollHandle = null;
 let liveMarker = null;     // Leaflet marker showing current GPS position during recording
 let liveStartedAt = null;  // Date used to back-compute elapsed time before the first log line
 
+// Rolling buffer of IMU samples for the live chart while recording.
+// 60 samples × 1 Hz poll = a 60-second window of live history.
+const LIVE_BUFFER_SIZE = 60;
+const liveBuffer = { t: [], ax: [], ay: [], az: [], gx: [], gy: [], gz: [] };
+let lastLiveTs = null;
+
+function resetLiveBuffer() {
+  for (const k of Object.keys(liveBuffer)) liveBuffer[k].length = 0;
+  lastLiveTs = null;
+}
+
 fpsSlider.addEventListener("input", () => { fpsOut.textContent = fpsSlider.value; });
 
 document.querySelectorAll(".dur-preset").forEach((b) => {
@@ -351,6 +362,7 @@ function formatElapsed(secs) {
 
 function renderStatus(s) {
   if (s.running && s.state) {
+    document.body.classList.add("recording");
     recordForm.hidden = true;
     recordLive.hidden = false;
     liveName.textContent = s.state.output_name || "";
@@ -384,6 +396,7 @@ function renderStatus(s) {
     liveLogBlock.textContent = (s.log_tail || []).join("\n");
     updateLivePreview();
   } else {
+    document.body.classList.remove("recording");
     recordForm.hidden = false;
     recordLive.hidden = true;
     liveStartedAt = null;
@@ -392,6 +405,7 @@ function renderStatus(s) {
       try { liveMarker.remove(); } catch {}
       liveMarker = null;
     }
+    resetLiveBuffer();
   }
 }
 
@@ -449,6 +463,20 @@ async function updateLivePreview() {
       }
     }
 
+    // Append IMU samples to the rolling buffer and update the live charts.
+    const ts = parseTimestamp(row.timestamp);
+    if (ts !== null && ts !== lastLiveTs && ax !== null && gx !== null) {
+      lastLiveTs = ts;
+      liveBuffer.t.push(ts);
+      liveBuffer.ax.push(ax); liveBuffer.ay.push(ay); liveBuffer.az.push(az);
+      liveBuffer.gx.push(gx); liveBuffer.gy.push(gy); liveBuffer.gz.push(gz);
+      if (liveBuffer.t.length > LIVE_BUFFER_SIZE) {
+        const trim = liveBuffer.t.length - LIVE_BUFFER_SIZE;
+        for (const k of Object.keys(liveBuffer)) liveBuffer[k].splice(0, trim);
+      }
+      updateLiveCharts();
+    }
+
     // Update the frame overlay even though we don't have the full
     // synchronized record — what we have is good enough for live preview.
     if (frameOverlay) {
@@ -468,6 +496,25 @@ async function updateLivePreview() {
 function fmtSigned(v) {
   const s = (v >= 0 ? "+" : "") + v.toFixed(2);
   return s.padStart(7, " ");
+}
+
+function updateLiveCharts() {
+  if (!state.accelChart || !liveBuffer.t.length) return;
+  const t0 = liveBuffer.t[0];
+  const xs = liveBuffer.t.map(t => t - t0);
+  const series = (key) => xs.map((x, i) => ({ x, y: liveBuffer[key][i] }));
+
+  state.accelChart.data.datasets[0].data = series("ax");
+  state.accelChart.data.datasets[1].data = series("ay");
+  state.accelChart.data.datasets[2].data = series("az");
+  state.accelChart.data.datasets[3].data = [];  // hide review-mode "now" line
+  state.accelChart.update("none");
+
+  state.gyroChart.data.datasets[0].data = series("gx");
+  state.gyroChart.data.datasets[1].data = series("gy");
+  state.gyroChart.data.datasets[2].data = series("gz");
+  state.gyroChart.data.datasets[3].data = [];
+  state.gyroChart.update("none");
 }
 
 async function pollStatus() {
