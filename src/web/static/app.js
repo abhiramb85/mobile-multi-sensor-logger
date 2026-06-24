@@ -52,11 +52,39 @@ function formatSize(bytes) {
   return `${bytes.toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
+/**
+ * Render a CSV timestamp (ISO 8601 UTC, or legacy float epoch) as local-time
+ * in YYYY-MM-DD HH:MM:SS.mmm. Browser's local time zone is used implicitly.
+ */
+function formatLocalTime(value) {
+  if (value === null || value === undefined || value === "") return "N/A";
+  let d;
+  const n = Number(value);
+  if (Number.isFinite(n)) {
+    d = new Date(n * 1000);
+  } else {
+    d = new Date(value);
+  }
+  if (isNaN(d.getTime())) return String(value);
+  const pad = (n, w = 2) => String(n).padStart(w, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+         `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+         `.${pad(d.getMilliseconds(), 3)}`;
+}
+
 // ---- Initialisation ----
 
 async function init() {
   initMap();
   initCharts();
+
+  // Bind review-mode listeners *unconditionally*. If the page first loaded
+  // with zero recordings and a fresh run later finishes via the polling
+  // refresh, these handlers still need to fire — they were being skipped
+  // before because the early return below bypassed the bind step.
+  runSelect.addEventListener("change", () => loadRun(runSelect.value));
+  scrubber.addEventListener("input", onScrub);
+  playBtn.addEventListener("click", togglePlay);
 
   const res = await fetch("/api/runs");
   const { runs } = await res.json();
@@ -75,9 +103,6 @@ async function init() {
     opt.textContent = `${run.name} (${formatSize(run.size_bytes)})`;
     runSelect.appendChild(opt);
   }
-  runSelect.addEventListener("change", () => loadRun(runSelect.value));
-  scrubber.addEventListener("input", onScrub);
-  playBtn.addEventListener("click", togglePlay);
 
   loadRun(runs[0].name);
 }
@@ -218,7 +243,7 @@ function applyIndex(i) {
   const ax = parseFloatSafe(r.ax), ay = parseFloatSafe(r.ay), az = parseFloatSafe(r.az);
   const gx = parseFloatSafe(r.gx), gy = parseFloatSafe(r.gy), gz = parseFloatSafe(r.gz);
   const lines = [
-    `t = ${r.timestamp || "N/A"}`,
+    `t = ${formatLocalTime(r.timestamp)}`,
     lat !== null && lon !== null ? `gps = ${lat.toFixed(6)}, ${lon.toFixed(6)}` : "gps = (no fix)",
     ax !== null ? `a   = ${fmt(ax)} ${fmt(ay)} ${fmt(az)} m/s²` : "a   = N/A",
     gx !== null ? `w   = ${fmt(gx)} ${fmt(gy)} ${fmt(gz)} deg/s` : "w   = N/A",
@@ -246,7 +271,7 @@ function applyIndex(i) {
   // Scrubber + readout
   scrubber.value = String(state.idx);
   const total = state.rows.length;
-  timeReadout.textContent = `${state.idx + 1} / ${total}   t = ${r.timestamp || "?"}`;
+  timeReadout.textContent = `${state.idx + 1} / ${total}   t = ${formatLocalTime(r.timestamp)}`;
 }
 
 function fmt(v) {
@@ -481,7 +506,7 @@ async function updateLivePreview() {
     // synchronized record — what we have is good enough for live preview.
     if (frameOverlay) {
       const lines = [
-        `t = ${row.timestamp || "N/A"}`,
+        `t = ${formatLocalTime(row.timestamp)}`,
         liveGps.textContent !== "—" ? `gps = ${liveGps.textContent}` : "gps = (no fix)",
         liveAccel.textContent !== "—" ? `a   = ${liveAccel.textContent} m/s²` : "a   = N/A",
         liveGyro.textContent !== "—"  ? `w   = ${liveGyro.textContent} deg/s` : "w   = N/A",
