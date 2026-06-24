@@ -1,3 +1,7 @@
+/* Browser default for [hidden] is display:none, but many of our containers
+   use display:flex/grid which overrides it. This makes the attribute work. */
+[hidden] { display: none !important; }
+
 :root {
   --bg: #0f1419;
   --panel: #1c2330;

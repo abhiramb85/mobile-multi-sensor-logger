@@ -65,8 +65,13 @@ class IMUDriver(SensorDriver):
         try:
             i2c = busio.I2C(board.SCL, board.SDA, frequency=400_000)
             self._sensor = BNO08X_I2C(i2c, address=self.i2c_address)
-            self._sensor.enable_feature(BNO_REPORT_ACCELEROMETER)
-            self._sensor.enable_feature(BNO_REPORT_GYROSCOPE)
+            # The BNO085's SH-2 stack can return ('Was not able to enable
+            # feature', 1) on the very first call, especially right after a
+            # previous session left the chip in an odd state. A short delay
+            # between calls plus a few retries makes this reliable.
+            self._enable_feature_with_retry(BNO_REPORT_ACCELEROMETER)
+            time.sleep(0.1)
+            self._enable_feature_with_retry(BNO_REPORT_GYROSCOPE)
             time.sleep(0.2)  # SH-2 needs a moment before the first reports stream
         except Exception as e:
             print(f"IMUDriver: failed to init BNO085 at 0x{self.i2c_address:02X}: {e}")
@@ -115,6 +120,19 @@ class IMUDriver(SensorDriver):
 
     def get_sample_count(self) -> int:
         return self.sample_count
+
+    def _enable_feature_with_retry(self, feature, retries: int = 4, delay: float = 0.15):
+        last_err = None
+        for attempt in range(retries):
+            try:
+                self._sensor.enable_feature(feature)
+                if attempt > 0:
+                    print(f"IMUDriver: enable_feature succeeded on attempt {attempt + 1}")
+                return
+            except Exception as e:
+                last_err = e
+                time.sleep(delay)
+        raise RuntimeError(f"enable_feature failed after {retries} attempts: {last_err}")
 
     def _sample_loop(self):
         period = 1.0 / self.sample_rate_hz
