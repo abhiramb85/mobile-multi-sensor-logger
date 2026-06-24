@@ -3,12 +3,13 @@
 // Multi-sensor dataset viewer — vanilla JS, single page.
 // Build marker: bumped each commit so users can verify their browser
 // loaded the latest JS by checking the console message below.
-const VIEWER_BUILD = "2026-06-24-display-cap";
+const VIEWER_BUILD = "2026-06-24-mp4-download";
 console.log(`[viewer] app.js loaded — build ${VIEWER_BUILD}`);
 
 const runSelect = document.getElementById("run-select");
 const runStats = document.getElementById("run-stats");
 const speedSelect = document.getElementById("speed-select");
+const downloadMp4 = document.getElementById("download-mp4");
 const currentFrame = document.getElementById("current-frame");
 const frameOverlay = document.getElementById("frame-overlay");
 const scrubber = document.getElementById("scrubber");
@@ -184,6 +185,15 @@ async function loadRun(runName) {
   state.rows = data.rows;
   runStats.textContent = `${data.count} rows — ~${state.fps.toFixed(1)} fps`;
   console.log(`[viewer] loadRun ${runName}: ${data.count} rows loaded`);
+
+  // Wire the Download MP4 link to this run. First click triggers cv2-based
+  // MP4 generation server-side (may take 15-60s for a large recording);
+  // result is cached so future clicks are instant.
+  if (downloadMp4) {
+    downloadMp4.href = `/api/runs/${encodeURIComponent(runName)}/playback.mp4`;
+    downloadMp4.hidden = false;
+    downloadMp4.title = "First click generates the MP4 (may take ~30s for a long recording); cached afterwards.";
+  }
   scrubber.max = String(Math.max(0, state.rows.length - 1));
   scrubber.value = "0";
 

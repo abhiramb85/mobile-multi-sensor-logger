@@ -391,6 +391,41 @@ def create_app(data_dir: Path) -> Flask:
         run_dir = _resolve_run(run)
         return send_from_directory(str(run_dir / "images"), filename)
 
+    @app.route("/api/runs/<run>/playback.mp4")
+    def playback_video(run: str):
+        """Generate (if missing) and serve an MP4 stitched from the run's JPEGs.
+
+        First call for a given run triggers cv2.VideoWriter — can take 15-60s
+        for a 7000-frame recording. The result is cached as <run>/playback.mp4
+        so every subsequent click is an instant download.
+        """
+        run_dir = _resolve_run(run)
+        mp4_path = run_dir / "playback.mp4"
+
+        if not mp4_path.is_file():
+            # Reuse the export logic from the CLI replay tool — same code
+            # path that powers `python -m src.tools.replay --export-video`,
+            # so the on-frame overlay (timestamp, GPS, accel, gyro) is
+            # baked in.
+            try:
+                from src.tools.replay import DatasetReplayer
+                replayer = DatasetReplayer(run_dir)
+                replayer.export_video(str(mp4_path))
+            except FileNotFoundError as e:
+                abort(404, str(e))
+            except Exception as e:
+                abort(500, f"failed to generate video: {e}")
+
+        if not mp4_path.is_file():
+            abort(500, "video generation reported success but no file was written")
+
+        return send_file(
+            str(mp4_path),
+            mimetype="video/mp4",
+            as_attachment=True,
+            download_name=f"{run}.mp4",
+        )
+
     @app.route("/api/recording/status")
     def recording_status():
         return jsonify(recorder.status())
