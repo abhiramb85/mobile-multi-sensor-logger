@@ -307,10 +307,15 @@ const liveRecords = document.getElementById("live-records");
 const liveTargetFps = document.getElementById("live-target-fps");
 const liveBar = document.getElementById("live-bar");
 const liveLogBlock = document.getElementById("live-log-block");
+const liveGps = document.getElementById("live-gps");
+const liveAccel = document.getElementById("live-accel");
+const liveGyro = document.getElementById("live-gyro");
 const fpsSlider = document.getElementById("opt-fps");
 const fpsOut = document.getElementById("opt-fps-out");
 
 let pollHandle = null;
+let liveMarker = null;     // Leaflet marker showing current GPS position during recording
+let liveStartedAt = null;  // Date used to back-compute elapsed time before the first log line
 
 fpsSlider.addEventListener("input", () => { fpsOut.textContent = fpsSlider.value; });
 
@@ -352,7 +357,16 @@ function renderStatus(s) {
     const params = s.state.params || {};
     liveTargetFps.textContent = params.fps ?? "—";
 
-    const elapsed = s.progress?.elapsed_s ?? 0;
+    // Track the recording's start time so we can show elapsed seconds
+    // even before main.py's first "[X.Xs] Frames: N" log line arrives.
+    if (s.state.started_at) {
+      liveStartedAt = new Date(s.state.started_at);
+    }
+
+    const fallbackElapsed = liveStartedAt
+      ? (Date.now() - liveStartedAt.getTime()) / 1000
+      : 0;
+    const elapsed = s.progress?.elapsed_s ?? fallbackElapsed;
     const frames  = s.progress?.frames    ?? 0;
     const records = s.progress?.records   ?? 0;
     liveElapsed.textContent = formatElapsed(elapsed);
@@ -368,10 +382,92 @@ function renderStatus(s) {
     }
 
     liveLogBlock.textContent = (s.log_tail || []).join("\n");
+    updateLivePreview();
   } else {
     recordForm.hidden = false;
     recordLive.hidden = true;
+    liveStartedAt = null;
+    // Tear down any live preview state from the previous recording.
+    if (liveMarker) {
+      try { liveMarker.remove(); } catch {}
+      liveMarker = null;
+    }
   }
+}
+
+/**
+ * Fetch the most recent JPEG + CSV row from the live recording and reflect them
+ * in the existing Frame and GPS Track panels so they double as a live preview
+ * while a recording is in progress.
+ */
+async function updateLivePreview() {
+  // Latest frame — cache-bust so the browser re-requests every poll.
+  if (currentFrame) {
+    currentFrame.src = `/api/recording/latest_frame?t=${Date.now()}`;
+    currentFrame.onerror = () => { currentFrame.removeAttribute("src"); };
+  }
+
+  // Latest CSV row — drives the GPS marker + IMU readouts + frame overlay.
+  try {
+    const r = await fetch("/api/recording/latest_row").then(x => x.json());
+    const row = r?.row;
+    if (!row) {
+      liveGps.textContent = "—";
+      liveAccel.textContent = "—";
+      liveGyro.textContent = "—";
+      return;
+    }
+
+    const lat = parseFloatSafe(row.latitude);
+    const lon = parseFloatSafe(row.longitude);
+    const ax = parseFloatSafe(row.ax);
+    const ay = parseFloatSafe(row.ay);
+    const az = parseFloatSafe(row.az);
+    const gx = parseFloatSafe(row.gx);
+    const gy = parseFloatSafe(row.gy);
+    const gz = parseFloatSafe(row.gz);
+
+    liveGps.textContent = (lat !== null && lon !== null)
+      ? `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+      : "(no fix)";
+    liveAccel.textContent = (ax !== null)
+      ? `${fmtSigned(ax)} ${fmtSigned(ay)} ${fmtSigned(az)}`
+      : "—";
+    liveGyro.textContent = (gx !== null)
+      ? `${fmtSigned(gx)} ${fmtSigned(gy)} ${fmtSigned(gz)}`
+      : "—";
+
+    // Move (or create) the GPS marker on the map.
+    if (lat !== null && lon !== null && state.map) {
+      if (!liveMarker) {
+        liveMarker = L.circleMarker([lat, lon], {
+          color: "#ff5050", fillColor: "#ff5050", fillOpacity: 0.9, radius: 7,
+        }).addTo(state.map);
+        state.map.setView([lat, lon], 16);
+      } else {
+        liveMarker.setLatLng([lat, lon]);
+      }
+    }
+
+    // Update the frame overlay even though we don't have the full
+    // synchronized record — what we have is good enough for live preview.
+    if (frameOverlay) {
+      const lines = [
+        `t = ${row.timestamp || "N/A"}`,
+        liveGps.textContent !== "—" ? `gps = ${liveGps.textContent}` : "gps = (no fix)",
+        liveAccel.textContent !== "—" ? `a   = ${liveAccel.textContent} m/s²` : "a   = N/A",
+        liveGyro.textContent !== "—"  ? `w   = ${liveGyro.textContent} deg/s` : "w   = N/A",
+      ];
+      frameOverlay.textContent = lines.join("\n");
+    }
+  } catch {
+    // Network blip during recording — silently ignore; next tick will retry.
+  }
+}
+
+function fmtSigned(v) {
+  const s = (v >= 0 ? "+" : "") + v.toFixed(2);
+  return s.padStart(7, " ");
 }
 
 async function pollStatus() {

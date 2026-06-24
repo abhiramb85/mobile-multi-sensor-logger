@@ -125,6 +125,14 @@ class WebApiTests(unittest.TestCase):
         resp = self.client.post("/api/recording/stop")
         self.assertEqual(resp.status_code, 409)
 
+    def test_recording_latest_frame_when_idle_returns_404(self):
+        resp = self.client.get("/api/recording/latest_frame")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_recording_latest_row_when_idle_returns_404(self):
+        resp = self.client.get("/api/recording/latest_row")
+        self.assertEqual(resp.status_code, 404)
+
 
 class RecordingManagerValidationTests(unittest.TestCase):
     """Cover the input-validation helper without spawning real subprocesses."""

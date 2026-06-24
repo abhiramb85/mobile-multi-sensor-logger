@@ -42,6 +42,7 @@ from flask import (
     abort,
     jsonify,
     request,
+    send_file,
     send_from_directory,
 )
 
@@ -200,10 +201,17 @@ class RecordingManager:
 
             log_path = out_dir / "acquisition.log"
             log_file = open(log_path, "w", buffering=1)
+            # PYTHONUNBUFFERED is critical: without it, the subprocess's stdout
+            # block-buffers when redirected to a file, so the [X.Xs] Frames: N
+            # progress lines don't reach the log (and our status endpoint)
+            # until many seconds in. With it, every print() flushes immediately.
+            env = os.environ.copy()
+            env["PYTHONUNBUFFERED"] = "1"
             kwargs = {
                 "cwd": str(PROJECT_ROOT),
                 "stdout": log_file,
                 "stderr": subprocess.STDOUT,
+                "env": env,
             }
             # Detach the recording so it survives a web-server crash.
             if os.name == "posix":
@@ -386,6 +394,52 @@ def create_app(data_dir: Path) -> Flask:
         if not ok:
             abort(409, "no recording is running")
         return jsonify({"ok": True})
+
+    @app.route("/api/recording/latest_frame")
+    def recording_latest_frame():
+        """Serve the most recently captured JPEG from the live recording's images/ dir."""
+        st = recorder.status()
+        if not st["running"] or not st["state"]:
+            abort(404, "no recording is running")
+        images_dir = Path(st["state"]["output_dir"]) / "images"
+        if not images_dir.is_dir():
+            abort(404, "images directory not ready yet")
+        # Filenames are frame_<unix_ms>.jpg so max() by name == newest.
+        try:
+            latest = max(images_dir.iterdir(), key=lambda p: p.name, default=None)
+        except OSError:
+            abort(503, "image dir read failed")
+        if latest is None or latest.suffix.lower() != ".jpg":
+            abort(404, "no frames captured yet")
+        # Tell the browser never to cache this URL — every poll is a fresh frame.
+        resp = send_file(str(latest), mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        return resp
+
+    @app.route("/api/recording/latest_row")
+    def recording_latest_row():
+        """Return the last complete CSV row from the live recording."""
+        st = recorder.status()
+        if not st["running"] or not st["state"]:
+            abort(404, "no recording is running")
+        csv_path = Path(st["state"]["output_dir"]) / "data.csv"
+        if not csv_path.is_file():
+            return jsonify({"row": None})
+        try:
+            with open(csv_path, "r") as f:
+                lines = f.readlines()
+        except OSError:
+            return jsonify({"row": None})
+        if len(lines) < 2:
+            return jsonify({"row": None})
+        header = lines[0].strip().split(",")
+        # The very last line could be a partial write mid-flush; if it has fewer
+        # columns than the header, fall back to the previous line.
+        for candidate in reversed(lines[1:]):
+            fields = candidate.strip().split(",")
+            if len(fields) == len(header):
+                return jsonify({"row": dict(zip(header, fields))})
+        return jsonify({"row": None})
 
     @app.errorhandler(404)
     def _not_found(err):

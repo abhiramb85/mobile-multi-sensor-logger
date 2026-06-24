@@ -308,3 +308,26 @@ main {
   border-radius: 4px;
   padding: 0.5rem 0.7rem;
 }
+
+.live-sensors {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.6rem;
+}
+@media (max-width: 700px) {
+  .live-sensors { grid-template-columns: 1fr; }
+}
+.sensor-tile {
+  background: #11151c;
+  border-radius: 4px;
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.sensor-tile > span:last-child {
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: pre;
+}
