@@ -112,11 +112,35 @@ def _validate_opts(raw: Dict) -> Dict:
     if not (0 <= camera_id <= 10):
         raise ValueError("camera_id out of range")
 
+    focus = raw.get("focus")
+    if focus is not None and focus != "":
+        try:
+            focus = int(focus)
+        except (TypeError, ValueError):
+            raise ValueError("focus must be an integer")
+        if not (0 <= focus <= 1023):
+            raise ValueError("focus must be between 0 and 1023")
+    else:
+        focus = None
+
+    sharpness = raw.get("sharpness")
+    if sharpness is not None and sharpness != "":
+        try:
+            sharpness = int(sharpness)
+        except (TypeError, ValueError):
+            raise ValueError("sharpness must be an integer")
+        if not (0 <= sharpness <= 15):
+            raise ValueError("sharpness must be between 0 and 15")
+    else:
+        sharpness = None
+
     out = {
         "fps": fps,
         "duration": duration,
         "camera_id": camera_id,
         "output_name": raw.get("output_name") or "",
+        "focus": focus,
+        "sharpness": sharpness,
     }
     for key in _VALID_BOOL_KEYS:
         out[key] = bool(raw.get(key, False))
@@ -198,6 +222,10 @@ class RecordingManager:
                 cmd.append("--enable-imu")
             if params["real_imu"]:
                 cmd.append("--real-imu")
+            if params.get("focus") is not None:
+                cmd += ["--focus", str(params["focus"])]
+            if params.get("sharpness") is not None:
+                cmd += ["--sharpness", str(params["sharpness"])]
 
             log_path = out_dir / "acquisition.log"
             log_file = open(log_path, "w", buffering=1)

@@ -3,7 +3,7 @@
 // Multi-sensor dataset viewer — vanilla JS, single page.
 // Build marker: bumped each commit so users can verify their browser
 // loaded the latest JS by checking the console message below.
-const VIEWER_BUILD = "2026-06-24-rows";
+const VIEWER_BUILD = "2026-06-24-focus";
 console.log(`[viewer] app.js loaded — build ${VIEWER_BUILD}`);
 
 const runSelect = document.getElementById("run-select");
@@ -382,6 +382,17 @@ function resetLiveBuffer() {
 
 fpsSlider.addEventListener("input", () => { fpsOut.textContent = fpsSlider.value; });
 
+const focusSlider = document.getElementById("opt-focus");
+const focusOut = document.getElementById("opt-focus-out");
+const sharpSlider = document.getElementById("opt-sharpness");
+const sharpOut = document.getElementById("opt-sharpness-out");
+focusSlider?.addEventListener("input", () => {
+  focusOut.textContent = focusSlider.value === "0" ? "(auto)" : focusSlider.value;
+});
+sharpSlider?.addEventListener("input", () => {
+  sharpOut.textContent = sharpSlider.value === "0" ? "(default)" : sharpSlider.value;
+});
+
 document.querySelectorAll(".dur-preset").forEach((b) => {
   b.addEventListener("click", () => {
     document.getElementById("opt-duration").value = b.dataset.secs;
@@ -394,6 +405,8 @@ function showError(msg) {
 }
 
 function collectOpts() {
+  const focus = Number(focusSlider?.value || 0);
+  const sharp = Number(sharpSlider?.value || 0);
   return {
     real_camera: document.getElementById("opt-real-camera").checked,
     real_gps:    document.getElementById("opt-real-gps").checked,
@@ -402,6 +415,10 @@ function collectOpts() {
     fps:         Number(fpsSlider.value),
     duration:    Number(document.getElementById("opt-duration").value),
     output_name: document.getElementById("opt-output-name").value.trim(),
+    // 0 means "leave the camera default" for both — sent as null so the
+    // backend doesn't touch CAP_PROP_FOCUS / CAP_PROP_SHARPNESS at all.
+    focus:       focus > 0 ? focus : null,
+    sharpness:   sharp > 0 ? sharp : null,
   };
 }
 
