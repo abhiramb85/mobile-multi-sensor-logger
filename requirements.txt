@@ -9,6 +9,11 @@ matplotlib>=3.3.0
 # Web viewer (Flask app + static SPA)
 Flask>=2.0
 
+# ROS 2 export (src/tools/to_rosbag.py). Pure-Python MCAP writers — no ROS 2
+# install needed to produce a bag, only to play one back.
+mcap>=1.1.0
+mcap-ros2-support>=0.5.0
+
 # IMU (BNO085 over I2C with SH-2 protocol; Raspberry Pi only)
 adafruit-circuitpython-bno08x>=1.2.0
 adafruit-blinka>=8.0.0
