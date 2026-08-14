@@ -116,6 +116,56 @@ Displays:
 - IMU telemetry graphs (matplotlib)
 - Optional MP4 export with `--export-video` (works headless on the Pi)
 
+### ROS 2 Export (`ros2 bag`)
+
+Datasets convert to a [rosbag2](https://github.com/ros2/rosbag2) bag on the MCAP storage backend. The exporter is pure Python — **no ROS 2 install is needed to produce a bag**, only to play one back — so the Pi stays ROS-free while a ROS workstation reads the result.
+
+```bash
+python src/tools/to_rosbag.py --dataset-dir ./data/run_001
+# -> ./data/run_001_rosbag/{run_001_rosbag_0.mcap, metadata.yaml}
+
+# on the ROS 2 machine (Humble or newer):
+ros2 bag info ./data/run_001_rosbag
+ros2 bag play ./data/run_001_rosbag
+```
+
+| Topic | Type | Notes |
+|---|---|---|
+| `/gps/fix` | `sensor_msgs/msg/NavSatFix` | `frame_id: gps_link`, altitude `NaN`, covariance type `UNKNOWN` |
+| `/imu/data_raw` | `sensor_msgs/msg/Imu` | `frame_id: imu_link`, gyro converted to rad/s per REP-103, `orientation_covariance[0] = -1` (no orientation) |
+| `/camera/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` | `format: jpeg`, JPEG bytes passed through unmodified |
+| `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | Resolution from `metadata.json`; intrinsics zeroed (uncalibrated) |
+| `/camera/image_raw` | `sensor_msgs/msg/Image` | `bgr8`, only with `--raw-images` (produces much larger bags) |
+
+Notes:
+- All messages on a row share the synchronizer's GPS-referenced timestamp, so the bag preserves the alignment `TimestampSynchronizer` computed.
+- ROS carries video as an image stream, not a container file — `/camera/image_raw/compressed` is the ROS-native form of the recording. The MP4 export remains a convenience artifact for humans, not for `ros2 bag`.
+- Frame IDs are overridable: `--camera-frame`, `--gps-frame`, `--imu-frame`.
+- Camera intrinsics are not captured by the logger; run `camera_calibration` and republish `CameraInfo` if you need rectified images.
+
+### Live ROS 2 Nodes (on the Pi)
+
+For *live* ROS 2 use, the sensor drivers are wrapped in publisher nodes so the sensors stream onto the ROS graph in real time — record with `ros2 bag record`, or feed any ROS consumer directly. This runs **alongside** the CSV pipeline, which stays ROS-free; it does not replace it.
+
+Unlike the offline exporter, live nodes need an actual ROS 2 install (Linux). The package lives in [ros2/mobile_sensor_logger/](ros2/mobile_sensor_logger/) as a standard `ament_python` package and reuses the exact same drivers in [src/sensors/](src/sensors/), so mock/real behavior matches the recorder. See [ros2/mobile_sensor_logger/README.md](ros2/mobile_sensor_logger/README.md) for full Pi setup; the short version:
+
+```bash
+# On the Pi (Ubuntu + ROS 2 Humble/Jazzy), with this repo cloned:
+mkdir -p ~/ros2_ws/src && ln -s ~/mobile-multi-sensor-logger/ros2/mobile_sensor_logger ~/ros2_ws/src/
+cd ~/ros2_ws && colcon build --symlink-install && source install/setup.bash
+
+# All sensors mocked — brings the graph up with no hardware:
+ros2 launch mobile_sensor_logger sensors.launch.py
+
+# Real hardware + live recording to an MCAP bag:
+ros2 launch mobile_sensor_logger sensors.launch.py \
+    camera_mock:=false gps_mock:=false imu_enabled:=true imu_mock:=false
+ros2 bag record -s mcap -o ride_001 \
+    /gps/fix /imu/data_raw /camera/image_raw/compressed /camera/camera_info
+```
+
+Nodes → topics: `gps_node` → `/gps/fix`, `imu_node` → `/imu/data_raw`, `camera_node` → `/camera/image_raw/compressed` + `/camera/camera_info` (add `publish_raw:=true` for `/camera/image_raw`). Same message types, frames, and unit conventions as the offline exporter above.
+
 ### Web Viewer + Control Panel
 
 A local browser-based UI for recording, reviewing, and visualizing datasets — usable from any phone or laptop on the same network as the Pi. No SSH needed for normal operation.
@@ -156,7 +206,9 @@ src/
 │   ├── logger.py     # Data logging formatter
 │   └── config.py     # Configuration schemas
 ├── tools/            # Utilities
-│   └── replay.py     # Replay and visualization
+│   ├── replay.py     # Replay and visualization
+│   ├── to_rosbag.py  # rosbag2 (MCAP) exporter
+│   └── ros2_msgs.py  # Embedded sensor_msgs definitions
 └── main.py           # Main acquisition orchestrator
 
 tests/                # Unit and integration tests
