@@ -20,6 +20,7 @@ Usage:
 import argparse
 import csv
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -37,13 +38,19 @@ from src.tools.ros2_common import (
     COVARIANCE_TYPE_UNKNOWN,
     STATUS_FIX,
     SERVICE_GPS,
-    ORIENTATION_UNAVAILABLE,
+    orientation_from_quaternion,
     parse_timestamp,
     to_ros_time,
     to_nanoseconds,
 )
 
 # rosbag2 metadata format version 5 — understood by Humble through Kilted.
+# Newer rosbag2 builds (confirmed on a Jazzy sync from mid-2026) additionally
+# *require* the `files`, `custom_data`, and `ros_distro` keys below to be
+# present, even at format version 5, or `ros2 bag info`/`play` refuses to
+# parse the file at all ("invalid node; first invalid key: files"). Those
+# keys are a strict superset — older readers that only understand version 5
+# ignore keys they don't recognize — so writing them is safe everywhere.
 BAG_METADATA_VERSION = 5
 
 _ZERO_COV_9 = [0.0] * 9
@@ -108,12 +115,12 @@ def build_imu(record: Dict, stamp: Dict, frame_id: str) -> Optional[Dict]:
     gyro = [_float(record, k) for k in ("gx", "gy", "gz")]
     if any(v is None for v in accel + gyro):
         return None
+    qx, qy, qz, qw = (_float(record, k) for k in ("qx", "qy", "qz", "qw"))
+    (ox, oy, oz, ow), orientation_covariance = orientation_from_quaternion(qx, qy, qz, qw)
     return {
         "header": {"stamp": stamp, "frame_id": frame_id},
-        # The BNO085 driver logs raw accel/gyro only; a -1 leading covariance
-        # element is how sensor_msgs/Imu marks a field as not supplied.
-        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
-        "orientation_covariance": [-1.0] + [0.0] * 8,
+        "orientation": {"x": ox, "y": oy, "z": oz, "w": ow},
+        "orientation_covariance": orientation_covariance,
         # data.csv stores gyro in deg/s for readability; REP-103 requires rad/s.
         "angular_velocity": dict(zip("xyz", (g * DEG_TO_RAD for g in gyro))),
         "angular_velocity_covariance": list(_ZERO_COV_9),
@@ -210,9 +217,19 @@ def write_metadata_yaml(
             '        offered_qos_profiles: ""',
             f"      message_count: {counts.get(topic, 0)}",
         ]
+    duration_ns = max(0, end_ns - start_ns)
     lines += [
         '  compression_format: ""',
         '  compression_mode: ""',
+        "  files:",
+        f"    - path: {bag_file}",
+        "      starting_time:",
+        f"        nanoseconds_since_epoch: {start_ns}",
+        "      duration:",
+        f"        nanoseconds: {duration_ns}",
+        f"      message_count: {total}",
+        "  custom_data: ~",
+        f"  ros_distro: {os.environ.get('ROS_DISTRO', 'unknown')}",
         "",
     ]
     (bag_dir / "metadata.yaml").write_text("\n".join(lines), encoding="utf-8")

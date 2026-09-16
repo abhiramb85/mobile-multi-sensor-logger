@@ -11,10 +11,10 @@ ensure_drivers_importable()
 from src.sensors.imu import IMUDriver  # noqa: E402
 from src.tools.ros2_common import (  # noqa: E402
     FRAME_IMU,
-    ORIENTATION_UNAVAILABLE,
     TOPIC_IMU,
     ZERO_COV_9,
     gyro_dps_to_rads,
+    orientation_from_quaternion,
 )
 from .node_utils import header_from_epoch  # noqa: E402
 
@@ -53,10 +53,13 @@ class ImuPublisher(Node):
             return
         msg = Imu()
         msg.header = header_from_epoch(sample["timestamp"], self.frame_id)
-        # The driver logs raw accel/gyro only; leading -1 marks orientation as
-        # not supplied, per the sensor_msgs/Imu convention.
-        msg.orientation.w = 1.0
-        msg.orientation_covariance = [ORIENTATION_UNAVAILABLE] + [0.0] * 8
+        (ox, oy, oz, ow), orientation_covariance = orientation_from_quaternion(
+            sample.get("qx"), sample.get("qy"), sample.get("qz"), sample.get("qw"))
+        msg.orientation.x = ox
+        msg.orientation.y = oy
+        msg.orientation.z = oz
+        msg.orientation.w = ow
+        msg.orientation_covariance = orientation_covariance
         # Driver reports gyro in deg/s; sensor_msgs/Imu requires rad/s (REP-103).
         wx, wy, wz = gyro_dps_to_rads((sample["gx"], sample["gy"], sample["gz"]))
         msg.angular_velocity.x = wx

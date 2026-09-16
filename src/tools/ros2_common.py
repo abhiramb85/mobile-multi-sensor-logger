@@ -72,3 +72,18 @@ def gyro_dps_to_rads(gyro: Sequence[float]) -> Tuple[float, float, float]:
     rad/s, which is what sensor_msgs/Imu requires under REP-103."""
     gx, gy, gz = gyro
     return (gx * DEG_TO_RAD, gy * DEG_TO_RAD, gz * DEG_TO_RAD)
+
+
+def orientation_from_quaternion(
+    qx: Optional[float], qy: Optional[float], qz: Optional[float], qw: Optional[float]
+) -> Tuple[Tuple[float, float, float, float], list]:
+    """Build (x, y, z, w) + orientation_covariance for sensor_msgs/Imu.
+
+    All four components must be present (the BNO085's on-chip rotation-vector
+    fusion report); otherwise orientation is unavailable and covariance[0] is
+    set to -1, per the msg docs, rather than publishing a fabricated identity
+    reading as if it were real.
+    """
+    if None in (qx, qy, qz, qw):
+        return (0.0, 0.0, 0.0, 1.0), [ORIENTATION_UNAVAILABLE] + [0.0] * 8
+    return (qx, qy, qz, qw), list(ZERO_COV_9)

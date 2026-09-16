@@ -54,6 +54,14 @@ class TestMessageBuilders(unittest.TestCase):
         record = {k: "0" for k in ("ax", "ay", "az", "gx", "gy", "gz")}
         imu = to_rosbag.build_imu(record, self.stamp, "imu_link")
         self.assertEqual(imu["orientation_covariance"][0], -1.0)
+        self.assertEqual(imu["orientation"], {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0})
+
+    def test_orientation_uses_recorded_quaternion(self):
+        record = {k: "0" for k in ("ax", "ay", "az", "gx", "gy", "gz")}
+        record.update(qx="0", qy="0", qz="0.7071", qw="0.7071")
+        imu = to_rosbag.build_imu(record, self.stamp, "imu_link")
+        self.assertEqual(imu["orientation"], {"x": 0.0, "y": 0.0, "z": 0.7071, "w": 0.7071})
+        self.assertEqual(imu["orientation_covariance"], [0.0] * 9)
 
     def test_missing_imu_columns_yield_no_message(self):
         record = {"ax": "", "ay": "", "az": "", "gx": "", "gy": "", "gz": ""}

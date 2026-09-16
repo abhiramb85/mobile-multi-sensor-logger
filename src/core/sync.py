@@ -113,7 +113,8 @@ class TimestampSynchronizer:
         Synchronize camera frame with GPS and optional IMU.
         
         Returns:
-            Synchronized record: {timestamp, lat, lon, image_path, ax, ay, az, gx, gy, gz}
+            Synchronized record: {timestamp, lat, lon, image_path, ax, ay, az,
+            gx, gy, gz, qx, qy, qz, qw}
         """
         camera_ts = camera_data.get("timestamp")
         
@@ -143,6 +144,10 @@ class TimestampSynchronizer:
             "gx": imu_match.get("gx") if imu_match else None,
             "gy": imu_match.get("gy") if imu_match else None,
             "gz": imu_match.get("gz") if imu_match else None,
+            "qx": imu_match.get("qx") if imu_match else None,
+            "qy": imu_match.get("qy") if imu_match else None,
+            "qz": imu_match.get("qz") if imu_match else None,
+            "qw": imu_match.get("qw") if imu_match else None,
         }
         
         return record

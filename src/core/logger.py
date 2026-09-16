@@ -58,7 +58,8 @@ class DataLogger:
                 'longitude',
                 'image_path',
                 'ax', 'ay', 'az',
-                'gx', 'gy', 'gz'
+                'gx', 'gy', 'gz',
+                'qx', 'qy', 'qz', 'qw'
             ]
             self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=fieldnames)
             self.csv_writer.writeheader()
@@ -80,7 +81,9 @@ class DataLogger:
                     "longitude (decimal degrees)",
                     "image_path (relative)",
                     "ax, ay, az (m/s², acceleration)",
-                    "gx, gy, gz (°/s, angular velocity)"
+                    "gx, gy, gz (°/s, angular velocity)",
+                    "qx, qy, qz, qw (unitless, orientation quaternion; "
+                    "null unless the IMU reports on-chip sensor fusion)"
                 ],
                 "notes": "IMU fields may be null if IMU not available"
             }
@@ -98,8 +101,9 @@ class DataLogger:
         If critical data (timestamp or location) is missing, the record is skipped and logged as an error.
         
         Args:
-            record: Dict with keys: timestamp, latitude, longitude, image_path, ax, ay, az, gx, gy, gz
-            
+            record: Dict with keys: timestamp, latitude, longitude, image_path,
+                ax, ay, az, gx, gy, gz, qx, qy, qz, qw
+
         Returns:
             True if successful, False otherwise
         """
@@ -118,6 +122,10 @@ class DataLogger:
                     'gx': record.get('gx'),
                     'gy': record.get('gy'),
                     'gz': record.get('gz'),
+                    'qx': record.get('qx'),
+                    'qy': record.get('qy'),
+                    'qz': record.get('qz'),
+                    'qw': record.get('qw'),
                 }
                 
                 self.csv_writer.writerow(row)
@@ -169,13 +177,15 @@ class DataLogger:
                     "longitude (decimal degrees)",
                     "image_path (relative)",
                     "ax, ay, az (m/s², acceleration)",
-                    "gx, gy, gz (°/s, angular velocity)"
+                    "gx, gy, gz (°/s, angular velocity)",
+                    "qx, qy, qz, qw (unitless, orientation quaternion; "
+                    "null unless the IMU reports on-chip sensor fusion)"
                 ]
             }
-            
+
             with open(self.metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
-            
+
             print(f"Logging finalized: {self.record_count} records, {end_time - self.start_time:.1f}s")
             
         except Exception as e:

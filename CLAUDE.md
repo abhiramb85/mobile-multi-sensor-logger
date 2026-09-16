@@ -61,7 +61,7 @@ GPS is the reference clock. The `TimestampSynchronizer` (`src/core/sync.py`) buf
 
 Each recording produces a directory with:
 - `images/frame_<unix_ms>.jpg` — JPEG frames
-- `data.csv` — 10 columns: `timestamp, latitude, longitude, image_path, ax, ay, az, gx, gy, gz` (IMU/GPS columns nullable)
+- `data.csv` — 14 columns: `timestamp, latitude, longitude, image_path, ax, ay, az, gx, gy, gz, qx, qy, qz, qw` (IMU/GPS columns nullable; `qx..qw` are null unless the IMU driver reports on-chip orientation fusion)
 - `metadata.json` — sensor config snapshot + recording stats
 
 ### ROS 2 compatibility
@@ -71,6 +71,8 @@ The acquisition pipeline deliberately has no ROS dependency — the Pi records p
 Serialization uses the pure-Python `mcap` + `mcap-ros2-support` packages, so no ROS 2 install is required to write a bag. Message schemas are embedded as .msg text in `src/tools/ros2_msgs.py`; **CDR is positional, so field order there must match upstream `sensor_msgs` exactly** or consumers decode garbage.
 
 Two unit conversions happen at the boundary: `data.csv` stores gyro in °/s but `sensor_msgs/Imu` requires rad/s (REP-103), and the CSV's ISO 8601 timestamp becomes a `builtin_interfaces/Time`. Older datasets store a bare epoch float instead of ISO 8601 — `parse_timestamp` handles both.
+
+`Imu.orientation` comes from the BNO085's on-chip rotation-vector fusion (`qx, qy, qz, qw` in `data.csv`), not computed from raw accel/gyro. Datasets recorded before this was wired up — and any mock/IMU reading that didn't report a quaternion — have null `qx..qw`; `orientation_from_quaternion` (`src/tools/ros2_common.py`) is the single place both the exporter and the live node fall back to `orientation_covariance[0] = -1` ("unavailable", per the msg docs) in that case, so they can't disagree on when orientation is real vs. an unfilled identity quaternion.
 
 For *live* ROS use, `ros2/mobile_sensor_logger/` is an `ament_python` package whose nodes wrap the existing drivers (`src/sensors/`) and publish the same topics/types in real time; record with `ros2 bag record`. It runs alongside the CSV pipeline, not instead of it, and needs a real ROS 2 install (Linux/Pi) — `rclpy` is not pip-installable, so it can't be exercised from the Windows dev box. The nodes import the drivers via `driver_loader.py` (walks up to the repo root, or `$SENSOR_LOGGER_ROOT`), so build with `colcon build --symlink-install`. The boundary conversions/constants/topic names live once in `src/tools/ros2_common.py` (ROS-free) and are imported by both the exporter and the nodes so the recorded-then-converted bag and the live bag can't disagree.
 

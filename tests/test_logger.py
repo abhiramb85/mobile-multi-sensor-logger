@@ -43,7 +43,8 @@ class TestDataLogger(unittest.TestCase):
             reader = csv.DictReader(f)
             expected_fields = [
                 'timestamp', 'latitude', 'longitude', 'image_path',
-                'ax', 'ay', 'az', 'gx', 'gy', 'gz'
+                'ax', 'ay', 'az', 'gx', 'gy', 'gz',
+                'qx', 'qy', 'qz', 'qw'
             ]
             self.assertEqual(reader.fieldnames, expected_fields)
         

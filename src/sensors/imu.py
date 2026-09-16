@@ -12,6 +12,7 @@ busio = None
 BNO08X_I2C = None
 BNO_REPORT_ACCELEROMETER = None
 BNO_REPORT_GYROSCOPE = None
+BNO_REPORT_ROTATION_VECTOR = None
 
 _RAD_TO_DEG = 180.0 / math.pi
 
@@ -43,7 +44,7 @@ class IMUDriver(SensorDriver):
             print("IMUDriver started (mock mode).")
             return True
 
-        global board, busio, BNO08X_I2C, BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE
+        global board, busio, BNO08X_I2C, BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE, BNO_REPORT_ROTATION_VECTOR
         if BNO08X_I2C is None:
             try:
                 import board as _board
@@ -52,6 +53,7 @@ class IMUDriver(SensorDriver):
                 from adafruit_bno08x import (
                     BNO_REPORT_ACCELEROMETER as _ACCEL,
                     BNO_REPORT_GYROSCOPE as _GYRO,
+                    BNO_REPORT_ROTATION_VECTOR as _ROTATION,
                 )
             except ImportError as e:
                 print(f"IMUDriver: missing BNO085 deps ({e}). "
@@ -61,6 +63,7 @@ class IMUDriver(SensorDriver):
             BNO08X_I2C = _BNO08X_I2C
             BNO_REPORT_ACCELEROMETER = _ACCEL
             BNO_REPORT_GYROSCOPE = _GYRO
+            BNO_REPORT_ROTATION_VECTOR = _ROTATION
 
         try:
             i2c = busio.I2C(board.SCL, board.SDA, frequency=400_000)
@@ -72,6 +75,10 @@ class IMUDriver(SensorDriver):
             self._enable_feature_with_retry(BNO_REPORT_ACCELEROMETER)
             time.sleep(0.1)
             self._enable_feature_with_retry(BNO_REPORT_GYROSCOPE)
+            time.sleep(0.1)
+            # Rotation vector fuses accel + gyro + magnetometer on-chip into an
+            # absolute orientation, unlike game-rotation-vector (no magnetometer).
+            self._enable_feature_with_retry(BNO_REPORT_ROTATION_VECTOR)
             time.sleep(0.2)  # SH-2 needs a moment before the first reports stream
         except Exception as e:
             print(f"IMUDriver: failed to init BNO085 at 0x{self.i2c_address:02X}: {e}")
@@ -112,6 +119,7 @@ class IMUDriver(SensorDriver):
                 "gx": random.uniform(-10, 10),
                 "gy": random.uniform(-10, 10),
                 "gz": random.uniform(-10, 10),
+                **self._mock_quaternion(),
             }
             self.sample_count += 1
             return data
@@ -120,6 +128,16 @@ class IMUDriver(SensorDriver):
 
     def get_sample_count(self) -> int:
         return self.sample_count
+
+    def _mock_quaternion(self) -> Dict:
+        """Synthesize a slowly-varying, normalized orientation quaternion."""
+        yaw = (time.time() * 0.1) % (2 * math.pi)
+        return {
+            "qx": 0.0,
+            "qy": 0.0,
+            "qz": math.sin(yaw / 2),
+            "qw": math.cos(yaw / 2),
+        }
 
     def _enable_feature_with_retry(self, feature, retries: int = 4, delay: float = 0.15):
         last_err = None
@@ -152,6 +170,7 @@ class IMUDriver(SensorDriver):
         try:
             accel = self._sensor.acceleration   # (ax, ay, az) m/s^2
             gyro = self._sensor.gyro            # (gx, gy, gz) rad/s
+            quat = self._sensor.quaternion      # (qi, qj, qk, qreal) i.e. (x, y, z, w)
         except Exception:
             # BNO085 SH-2 reports can occasionally fail; main loop sees a stale value.
             return None
@@ -161,7 +180,7 @@ class IMUDriver(SensorDriver):
             return None
         ax, ay, az = accel
         gx, gy, gz = gyro
-        return {
+        record = {
             "timestamp": timestamp,
             "ax": float(ax), "ay": float(ay), "az": float(az),
             # Convert rad/s -> deg/s so the schema stays human-friendly and consistent
@@ -169,4 +188,9 @@ class IMUDriver(SensorDriver):
             "gx": float(gx) * _RAD_TO_DEG,
             "gy": float(gy) * _RAD_TO_DEG,
             "gz": float(gz) * _RAD_TO_DEG,
+            "qx": None, "qy": None, "qz": None, "qw": None,
         }
+        if quat is not None and all(v is not None for v in quat):
+            qx, qy, qz, qw = quat
+            record.update(qx=float(qx), qy=float(qy), qz=float(qz), qw=float(qw))
+        return record
