@@ -94,8 +94,8 @@ data/run001/
 ### CSV Format
 
 ```
-timestamp,latitude,longitude,image_path,ax,ay,az,gx,gy,gz
-1651316400.123,52.5200,13.4050,images/frame_1651316400123.jpg,0.05,-0.02,9.81,0.01,0.02,-0.01
+timestamp,latitude,longitude,image_path,ax,ay,az,gx,gy,gz,qx,qy,qz,qw
+1651316400.123,52.5200,13.4050,images/frame_1651316400123.jpg,0.05,-0.02,9.81,0.01,0.02,-0.01,0.0,0.0,0.01,0.9999
 ```
 
 - `timestamp`: Unix epoch (seconds.milliseconds)
@@ -103,6 +103,7 @@ timestamp,latitude,longitude,image_path,ax,ay,az,gx,gy,gz
 - `image_path`: Relative path to image file
 - `ax, ay, az`: Acceleration in m/s² (or null if no IMU)
 - `gx, gy, gz`: Angular velocity in °/s (or null if no IMU)
+- `qx, qy, qz, qw`: Orientation quaternion from the IMU's on-chip sensor fusion (or null if the IMU doesn't report one)
 
 ### Replay Tool (CLI)
 
@@ -132,7 +133,7 @@ ros2 bag play ./data/run_001_rosbag
 | Topic | Type | Notes |
 |---|---|---|
 | `/gps/fix` | `sensor_msgs/msg/NavSatFix` | `frame_id: gps_link`, altitude `NaN`, covariance type `UNKNOWN` |
-| `/imu/data_raw` | `sensor_msgs/msg/Imu` | `frame_id: imu_link`, gyro converted to rad/s per REP-103, `orientation_covariance[0] = -1` (no orientation) |
+| `/imu/data_raw` | `sensor_msgs/msg/Imu` | `frame_id: imu_link`, gyro converted to rad/s per REP-103; `orientation` set from the recorded quaternion when present, else `orientation_covariance[0] = -1` (no orientation) |
 | `/camera/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` | `format: jpeg`, JPEG bytes passed through unmodified |
 | `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | Resolution from `metadata.json`; intrinsics zeroed (uncalibrated) |
 | `/camera/image_raw` | `sensor_msgs/msg/Image` | `bgr8`, only with `--raw-images` (produces much larger bags) |

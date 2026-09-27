@@ -41,19 +41,24 @@ dataset_root/
 | gx | Float | Optional | °/s | X-axis angular velocity; Null if no IMU |
 | gy | Float | Optional | °/s | Y-axis angular velocity; Null if no IMU |
 | gz | Float | Optional | °/s | Z-axis angular velocity; Null if no IMU |
+| qx | Float | Optional | unitless | Orientation quaternion x; Null unless the IMU reports on-chip rotation-vector fusion |
+| qy | Float | Optional | unitless | Orientation quaternion y; Null unless the IMU reports on-chip rotation-vector fusion |
+| qz | Float | Optional | unitless | Orientation quaternion z; Null unless the IMU reports on-chip rotation-vector fusion |
+| qw | Float | Optional | unitless | Orientation quaternion w; Null unless the IMU reports on-chip rotation-vector fusion |
 
 ### Example Row
 
 ```csv
-2026-06-14T06:24:02.040558+00:00,52.52001,13.40500,images/frame_1781475842040.jpg,0.05,-0.02,9.81,0.01,0.02,-0.01
-2026-06-14T06:24:02.073891+00:00,52.52002,13.40501,images/frame_1781475842073.jpg,0.04,-0.01,9.82,0.00,0.03,-0.01
-2026-06-14T06:24:02.107224+00:00,,,images/frame_1781475842107.jpg,,,,,,
+2026-06-14T06:24:02.040558+00:00,52.52001,13.40500,images/frame_1781475842040.jpg,0.05,-0.02,9.81,0.01,0.02,-0.01,0.0,0.0,0.01,0.9999
+2026-06-14T06:24:02.073891+00:00,52.52002,13.40501,images/frame_1781475842073.jpg,0.04,-0.01,9.82,0.00,0.03,-0.01,0.0,0.0,0.01,0.9999
+2026-06-14T06:24:02.107224+00:00,,,images/frame_1781475842107.jpg,,,,,,,,,,
 ```
 
 ### Null Value Representation
 
 - GPS outage: Empty cell (no value between commas)
 - No IMU: Entire columns may be empty or null
+- `qx, qy, qz, qw`: Null whenever the IMU doesn't report a fused orientation — either IMU disabled, or a driver/chip that only provides raw accel/gyro. Never fabricated as an identity quaternion in the CSV itself (the rosbag exporter is what falls back to that, and flags it as unavailable via covariance).
 
 ## Image Files
 
@@ -130,6 +135,7 @@ dataset_root/
 - Longitude: -180 ≤ lon ≤ +180
 - Acceleration: typically |a| < 20 m/s²
 - Angular velocity: typically |ω| < 360 °/s
+- Orientation quaternion: (qx, qy, qz, qw) should be unit-norm when present
 
 ## Validation Tool
 

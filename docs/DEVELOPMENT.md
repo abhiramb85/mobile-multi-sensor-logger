@@ -72,7 +72,7 @@
 
 ## Known Issues & TODOs
 
-1. **IMU integration**: BNO085 driver implemented (SH-2 protocol over I2C at 400 kHz). The chip's full fusion outputs (quaternion, Euler, linear acceleration, magnetometer) are accessible via the library but only `ax/ay/az/gx/gy/gz` are persisted to CSV per the fixed schema. Gyro output converted from rad/s (BNO085 native) to deg/s for schema consistency. Extending the schema is a future task.
+1. **IMU integration**: BNO085 driver implemented (SH-2 protocol over I2C at 400 kHz). Raw `ax/ay/az/gx/gy/gz` plus the chip's on-chip rotation-vector fusion (`qx/qy/qz/qw`) are persisted to CSV. Gyro output converted from rad/s (BNO085 native) to deg/s for schema consistency. Euler, linear acceleration, and magnetometer outputs remain accessible via the library but are not persisted.
 2. **USB camera timestamps**: Drifts over time. RPi CSI camera recommended for better sync — would require a separate picamera2 code path on Pi 5.
 3. **GPS cold start**: 30+ seconds typical in open sky. Document in user guide.
 4. **Performance**: Raspberry Pi 4 may bottleneck at >20 fps full resolution. Test early on Pi 5 (USB 3.0 gives more headroom).

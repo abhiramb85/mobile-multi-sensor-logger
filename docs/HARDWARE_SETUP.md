@@ -133,16 +133,20 @@ i2cdetect -y 1
 ```python
 import board, busio
 from adafruit_bno08x.i2c import BNO08X_I2C
-from adafruit_bno08x import BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE
+from adafruit_bno08x import (
+    BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE, BNO_REPORT_ROTATION_VECTOR,
+)
 
 i2c = busio.I2C(board.SCL, board.SDA, frequency=400_000)
 sensor = BNO08X_I2C(i2c)                          # default address 0x4a
 sensor.enable_feature(BNO_REPORT_ACCELEROMETER)
 sensor.enable_feature(BNO_REPORT_GYROSCOPE)
+sensor.enable_feature(BNO_REPORT_ROTATION_VECTOR)  # on-chip fusion -> qx,qy,qz,qw in data.csv
 
 import time; time.sleep(0.5)                       # SH-2 needs a moment to start reports
 print("accel:", sensor.acceleration)               # m/s^2, includes gravity
 print("gyro:",  sensor.gyro)                       # rad/s — convert *180/π for deg/s
+print("quat:",  sensor.quaternion)                 # (x, y, z, w), unit-norm
 ```
 
 ## Outdoor Testing
