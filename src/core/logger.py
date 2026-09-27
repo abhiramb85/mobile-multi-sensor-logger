@@ -97,9 +97,15 @@ class DataLogger:
     
     def log_record(self, record: Dict) -> bool:
         """
-        Log a synchronized sensor record to CSV after validating required fields.
-        If critical data (timestamp or location) is missing, the record is skipped and logged as an error.
-        
+        Write a synchronized sensor record to CSV as-is.
+
+        No field is required to be present: latitude/longitude/IMU fields are
+        written null when the corresponding sensor had no reading for this
+        record (e.g. a GPS outage, or the IMU disabled), which is expected,
+        intentional behavior rather than an error condition. A record is only
+        skipped if writing it raises an exception (e.g. the CSV file already
+        closed).
+
         Args:
             record: Dict with keys: timestamp, latitude, longitude, image_path,
                 ax, ay, az, gx, gy, gz, qx, qy, qz, qw
