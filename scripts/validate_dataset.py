@@ -52,6 +52,7 @@ REQUIRED_COLUMNS = [
     "image_path",
     "ax", "ay", "az",
     "gx", "gy", "gz",
+    "qx", "qy", "qz", "qw",
 ]
 
 # Image files smaller than this are very likely mock placeholders (b"MOCK_FRAME" = 10 bytes)
