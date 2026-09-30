@@ -79,7 +79,7 @@ class DataLogger:
                     "timestamp (ISO 8601 UTC, microsecond precision)",
                     "latitude (decimal degrees)",
                     "longitude (decimal degrees)",
-                    "image_path (relative)",
+                    "image_path (path as written at recording time; may be absolute -- join by basename)",
                     "ax, ay, az (m/s², acceleration)",
                     "gx, gy, gz (°/s, angular velocity)",
                     "qx, qy, qz, qw (unitless, orientation quaternion; "
@@ -181,7 +181,7 @@ class DataLogger:
                     "timestamp (ISO 8601 UTC, microsecond precision)",
                     "latitude (decimal degrees)",
                     "longitude (decimal degrees)",
-                    "image_path (relative)",
+                    "image_path (path as written at recording time; may be absolute -- join by basename)",
                     "ax, ay, az (m/s², acceleration)",
                     "gx, gy, gz (°/s, angular velocity)",
                     "qx, qy, qz, qw (unitless, orientation quaternion; "

@@ -100,7 +100,7 @@ timestamp,latitude,longitude,image_path,ax,ay,az,gx,gy,gz,qx,qy,qz,qw
 
 - `timestamp`: Unix epoch (seconds.milliseconds)
 - `latitude`, `longitude`: GPS position in decimal degrees
-- `image_path`: Relative path to image file
+- `image_path`: Path to the image as written at recording time (often absolute, tied to the machine/`--output-dir` used); consumers should join on the basename against their own `images/` dir, as `scripts/validate_dataset.py` and `src/tools/replay.py` do, rather than use the stored path directly
 - `ax, ay, az`: Acceleration in m/s² (or null if no IMU)
 - `gx, gy, gz`: Angular velocity in °/s (or null if no IMU)
 - `qx, qy, qz, qw`: Orientation quaternion from the IMU's on-chip sensor fusion (or null if the IMU doesn't report one)

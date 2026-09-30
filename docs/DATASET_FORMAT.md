@@ -34,7 +34,7 @@ dataset_root/
 | timestamp | String | Yes | ISO 8601 UTC, microsecond precision | E.g., `2026-06-14T06:24:02.040558+00:00` |
 | latitude | Float | Optional | Decimal degrees | Range: -90 to +90; Null if no GPS fix |
 | longitude | Float | Optional | Decimal degrees | Range: -180 to +180; Null if no GPS fix |
-| image_path | String | Yes | Relative path from dataset root | E.g., `images/frame_1651316400123.jpg` |
+| image_path | String | Yes | Path as written at recording time (often absolute; consumers should use the basename) | E.g., `images/frame_1651316400123.jpg`, or an absolute path if `--output-dir` was absolute |
 | ax | Float | Optional | m/s² | X-axis acceleration; Null if no IMU |
 | ay | Float | Optional | m/s² | Y-axis acceleration; Null if no IMU |
 | az | Float | Optional | m/s² | Z-axis acceleration; Null if no IMU |
@@ -179,6 +179,11 @@ print(f"Duration: {df['timestamp'].max() - df['timestamp'].min():.1f}s")
 print(f"GPS coverage: {(df['latitude'].notna().sum() / len(df) * 100):.1f}%")
 
 # Load first frame
-first_image = cv2.imread(str(dataset_dir / df['image_path'].iloc[0]))
+# image_path is often the absolute path from the original recording machine
+# (see the Column Specifications note above) -- join by basename, the same
+# way scripts/validate_dataset.py and src/tools/replay.py do, so this works
+# regardless of where the dataset currently lives.
+first_image_path = dataset_dir / "images" / Path(df['image_path'].iloc[0]).name
+first_image = cv2.imread(str(first_image_path))
 print(f"Image shape: {first_image.shape}")
 ```
