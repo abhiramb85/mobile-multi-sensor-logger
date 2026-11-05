@@ -47,6 +47,7 @@ src/tools/ros2_msgs.py  Embedded sensor_msgs .msg definitions for the exporter
 src/tools/ros2_common.py  ROS-free shared conversions/constants (exporter + live nodes)
 ros2/mobile_sensor_logger/  ament_python package: live ROS 2 publisher nodes (Pi only)
 tests/               unittest + pytest; mock sensors for fully offline testing
+hardware/cad/        STL files for the 3D-printed Pi 5 case (base, lid) and camera mount
 ```
 
 ### Synchronization strategy
@@ -89,4 +90,4 @@ Per `docs/DEVELOPMENT.md`:
 
 ## Hardware notes
 
-Target: Raspberry Pi 4 (4 GB), USB webcam (Logitech C920), u-blox NEO-6M GPS via serial, optional MPU-6050 IMU via I2C. RPi 4 may bottleneck above 20 fps at full resolution. GPS cold start takes 30+ seconds outdoors. See `docs/HARDWARE_SETUP.md` for wiring details.
+Target: Raspberry Pi 4 (4 GB), USB webcam (Logitech C920), u-blox NEO-6M GPS via serial, optional MPU-6050 IMU via I2C. RPi 4 may bottleneck above 20 fps at full resolution. GPS cold start takes 30+ seconds outdoors. See `docs/HARDWARE_SETUP.md` for wiring details (Mermaid wiring diagram + GPIO pinout) and `hardware/cad/` for the printed enclosure.

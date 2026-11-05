@@ -45,7 +45,9 @@ This project integrates camera, GPS, and optional IMU sensors to collect geo-ref
 
 ## Hardware Setup
 
-Refer to `docs/HARDWARE_SETUP.md` for detailed wiring and assembly instructions.
+Refer to `docs/HARDWARE_SETUP.md` for detailed wiring and assembly instructions, including a wiring diagram of how every component connects to the Pi.
+
+STL files for the 3D-printed Raspberry Pi 5 case and camera mount are in [`hardware/cad/`](hardware/cad/).
 
 ### Supported Components
 
@@ -214,6 +216,7 @@ src/
 
 tests/                # Unit and integration tests
 docs/                 # Documentation and guides
+hardware/cad/         # STL files for the 3D-printed case and camera mount
 data/                 # Default data storage location
 ```
 

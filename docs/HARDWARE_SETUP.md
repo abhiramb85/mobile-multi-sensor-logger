@@ -36,7 +36,81 @@
 - (Recommended) STEMMA QT JST-SH-to-Dupont cable (Adafruit 4397) for one-step wiring
 - Breadboard and jumper wires (for I2C)
 - USB hub (if > 3 USB devices)
-- Weatherproof enclosure
+- Weatherproof enclosure — or print the Pi 5 case and camera mount in [`hardware/cad/`](../hardware/cad/)
+
+### Wiring Diagram
+
+How every component connects to the Raspberry Pi 5, and which device node /
+CLI flag the software uses for each link:
+
+```mermaid
+flowchart LR
+    PSU["Power<br/>5 V 5 A USB-C supply<br/>or power bank"]
+    GPS["GPS<br/>Navilock NL-852EUSB<br/>u-blox 8"]
+    IMU["IMU<br/>BNO085 breakout<br/>I2C addr 0x4a"]
+    STORE[("Storage<br/>microSD 64 GB+<br/>or USB SSD")]
+
+    subgraph CAMMOUNT["pi5_camera.stl mount"]
+        CAM["Camera<br/>USB UVC webcam"]
+    end
+
+    subgraph CASE["pi5_base + pi5_lid case"]
+        PI["Raspberry Pi 5"]
+    end
+
+    PSU  == "USB-C power" ==> PI
+    CAM  -- "USB 3.0<br/>/dev/video0<br/>--real-camera --camera-id 0" --> PI
+    GPS  -- "USB CDC, NMEA<br/>/dev/ttyACM0<br/>--real-gps --gps-port" --> PI
+    IMU  -- "I2C bus 1, 4 wires<br/>3V3 · GND · SDA · SCL<br/>--enable-imu --real-imu" --> PI
+    PI   -- "data.csv · images/ · metadata.json" --> STORE
+```
+
+| Link | Bus | Pi side | Linux device | Enable with |
+|------|-----|---------|--------------|-------------|
+| Camera → Pi | USB 3.0 | any USB port (blue port on Pi 4) | `/dev/video0` | `--real-camera --camera-id 0` |
+| GPS → Pi | USB (CDC-ACM) | any USB port | `/dev/ttyACM0` | `--real-gps --gps-port /dev/ttyACM0` |
+| IMU → Pi | I2C bus 1 @ 400 kHz | GPIO header pins 1, 3, 5, 6 | `/dev/i2c-1`, address `0x4a` | `--enable-imu --real-imu` |
+| Power → Pi | USB-C PD | USB-C power input | — | — |
+| Pi → Storage | microSD slot or USB 3.0 | SD slot / USB port | `--output-dir` path | `--output-dir ./data/run_001` |
+
+#### IMU on the GPIO header
+
+Only four header pins are used. Pin 1 is the corner pin nearest the microSD
+end of the board (square solder pad on the underside).
+
+```
+                    Raspberry Pi 40-pin header (top-left corner)
+                    ┌─────────────────────────────────────┐
+  BNO085 VIN ──────►│ ● 1  3V3            5V          2 ○ │
+  BNO085 SDA ──────►│ ● 3  GPIO2 (SDA)    5V          4 ○ │
+  BNO085 SCL ──────►│ ● 5  GPIO3 (SCL)    GND         6 ● │◄────── BNO085 GND
+                    │ ○ 7  GPIO4          GPIO14 (TX) 8 ○ │  (UART GPS RX, optional)
+                    │ ○ 9  GND            GPIO15 (RX)10 ○ │  (UART GPS TX, optional)
+                    │            ⋮               ⋮         │
+                    └─────────────────────────────────────┘
+                     ● = used by the IMU   ○ = unused
+```
+
+With an Adafruit STEMMA QT → Dupont cable (part 4397) the colours map as:
+**red → pin 1 (3V3)**, **blue → pin 3 (SDA)**, **yellow → pin 5 (SCL)**,
+**black → pin 6 (GND)**.
+
+#### Physical assembly
+
+1. Screw the Pi 5 onto the four standoffs in the printed **`pi5_base`** tray
+   (58 × 49 mm pattern = the Pi's own mounting holes).
+2. Screw the USB camera board onto the **`pi5_camera`** bracket (32 × 32 mm
+   hole pattern, lens through the square window) and fix the bracket's foot to
+   the bike/robot facing forward.
+3. Plug the camera and GPS USB cables into the Pi through the base's side
+   cut-outs. Place the GPS puck where it has a clear view of the sky (on top of
+   the lid or handlebars, not under metal).
+4. Wire the BNO085 to header pins 1/3/5/6 as above (if the IMU sits outside
+   the case, route the lead through the slot in **`pi5_lid`**), then press the
+   lid onto the base.
+5. Mount the IMU rigidly to the frame (not on a flexing cable) — vibration and
+   movement relative to the camera show up directly in the accel/gyro data.
+6. Connect USB-C power last.
 
 ### Wiring
 
@@ -161,7 +235,7 @@ print("quat:",  sensor.quaternion)                 # (x, y, z, w), unit-norm
 - [ ] All USB devices detected: `lsusb`
 - [ ] Camera accessible: `ls /dev/video*`
 - [ ] GPS getting fixes: `cat /dev/ttyACM0` (watch for `$GNRMC`/`$GNGGA` sentences with status `A` = active)
-- [ ] IMU responding (if enabled): `i2cdetect -y 1` (should show `28`, or `29` if ADR high)
+- [ ] IMU responding (if enabled): `i2cdetect -y 1` (should show `4a` for the BNO085)
 - [ ] Storage space: `df -h` (ensure >50GB free)
 - [ ] Battery/power: Adequate for planned duration
 - [ ] Network connectivity: Not required for logging, but helpful for monitoring
